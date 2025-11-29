@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SyncStream Low Latency</title>
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <link href="https://unpkg.com/@videojs/themes@1/dist/fantasy/index.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0f0f0f;
+            color: #f1f1f1;
+            font-family: 'Roboto', Arial, sans-serif;
+            display: flex;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Layout Structure */
+        .app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            overflow-y: auto;
+            align-items: center;
+        }
+
+        .sidebar {
+            width: 400px;
+            background: #0f0f0f;
+            border-left: 1px solid #272727;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            flex-shrink: 0;
+        }
+
+        /* Sidebar Sections */
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #0f0f0f;
+            border-bottom: 1px solid #272727;
+            min-height: 0;
+        }
+
+        .library-section {
+            height: 30%;
+            display: flex;
+            flex-direction: column;
+            background: #0f0f0f;
+            overflow: hidden;
+        }
+
+        /* Header/Controls */
+        .video-header {
+            width: 100%;
+            max-width: 1280px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .logo {
+            font-size: 1.2rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            width: 100%;
+            max-width: 1280px;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"] {
+            background: #121212;
+            border: 1px solid #303030;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 18px;
+            outline: none;
+            transition: border 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: #3ea6ff;
+        }
+
+        /* Buttons */
+        button {
+            padding: 8px 16px;
+            background: #272727;
+            color: white;
+            border: none;
+            border-radius: 18px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button:hover {
+            background: #3f3f3f;
+        }
+
+        #syncBtn {
+            background-color: #3ea6ff;
+            color: black;
+        }
+
+        #syncBtn:hover {
+            background-color: #65b8ff;
+        }
+
+        #micBtn.recording {
+            background-color: #cc0000;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+
+        /* Volume Slider */
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #272727;
+            padding: 5px 12px;
+            border-radius: 18px;
+        }
+
+        .volume-control input[type="range"] {
+            width: 80px;
+            accent-color: #3ea6ff;
+            cursor: pointer;
+        }
+
+        .volume-label {
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+
+        /* Video Player */
+        .video-container {
+            width: 100%;
+            max-width: 1280px;
+            aspect-ratio: 16/9;
+            background: black;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+
+        .video-js {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Status */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 12px;
+            width: 100%;
+            max-width: 1280px;
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+
+        .status.connected {
+            color: #2ba640;
+        }
+
+        /* Library Items */
+        .library-header {
+            padding: 12px 16px;
+            font-size: 1rem;
+            font-weight: bold;
+            border-bottom: 1px solid #272727;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .library-list {
+            overflow-y: auto;
+            flex: 1;
+            padding: 8px 0;
+        }
+
+        .file-item {
+            padding: 8px 16px;
+            display: flex;
+            gap: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .file-item:hover {
+            background: #272727;
+        }
+
+        .file-item.active {
+            background: #272727;
+        }
+
+        .file-thumb {
+            width: 120px;
+            height: 68px;
+            background: #333;
+            border-radius: 8px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 0.8rem;
+        }
+
+        .file-info {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .file-name {
+            font-size: 0.9rem;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #f1f1f1;
+        }
+
+        .file-meta {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-top: 4px;
+        }
+
+        /* Chat Styles */
+        .chat-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #272727;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 1rem;
+        }
+
+        #chatMessages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .chat-msg {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            padding: 4px 0;
+        }
+
+        .chat-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #555;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .chat-content {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-author {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-bottom: 2px;
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+
+        .chat-author .admin-badge {
+            background: #3ea6ff;
+            color: black;
+            padding: 0 4px;
+            border-radius: 2px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .chat-text {
+            color: #fff;
+            word-break: break-word;
+        }
+
+        .chat-input-area {
+            padding: 16px;
+            border-top: 1px solid #272727;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            background: #1f1f1f;
+            border: none;
+            border-bottom: 1px solid #3f3f3f;
+            border-radius: 0;
+            padding: 8px 0;
+            color: white;
+        }
+
+        .chat-input-area input:focus {
+            border-bottom-color: #3ea6ff;
+        }
+
+        /* Fullscreen Chat Overlay */
+        .video-js.vjs-fullscreen .vjs-chat-overlay {
+            display: block !important;
+        }
+
+        .vjs-chat-overlay {
+            display: none;
+            position: absolute;
+            bottom: 60px;
+            /* Above control bar */
+            left: 20px;
+            width: 350px;
+            height: 300px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 12px;
+            padding: 10px;
+            z-index: 999;
+            pointer-events: auto;
+            overflow: hidden;
+            backdrop-filter: blur(5px);
+            mask-image: linear-gradient(to bottom, transparent, black 10%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent, black 10%);
+        }
+
+        .vjs-chat-overlay .chat-msg {
+            padding: 2px 0;
+            text-shadow: 1px 1px 2px black;
+        }
+
+        .vjs-chat-overlay .chat-author {
+            color: #ccc;
+        }
+
+        .vjs-mic-button:hover .vjs-icon-placeholder:before {
+            color: #e50914;
+        }
+
+        /* --- MODALS --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal {
+            background: #222;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            width: 400px;
+            max-width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal h2 {
+            margin-top: 0;
+            color: #3ea6ff;
+            margin-bottom: 20px;
+        }
+
+        .modal input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+            background: #333;
+            border: 1px solid #555;
+            color: white;
+            border-radius: 4px;
+            font-size: 1.1em;
+        }
+
+        .modal button {
+            width: 100%;
+            padding: 12px;
+            font-size: 1.1em;
+            justify-content: center;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Admin Dashboard */
+        .user-list {
+            text-align: left;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            border: 1px solid #333;
+            border-radius: 4px;
+        }
+
+        .user-row {
+            padding: 10px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #2a2a2a;
+        }
+
+        .user-row:last-child {
+            border-bottom: none;
+        }
+
+        .user-row span {
+            font-size: 0.9em;
+        }
+
+        .kick-btn {
+            background: #d32f2f;
+            padding: 5px 10px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+
+        .admin-badge {
+            background: #4caf50;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.7em;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- WELCOME MODAL -->
+    <div id="welcomeModal" class="modal-overlay">
+        <div class="modal">
+            <h2>👤 Who are you?</h2>
+            <input type="text" id="usernameInput" placeholder="Enter your name..."
+                onkeypress="if(event.key==='Enter') submitName()">
+            <button onclick="submitName()">Join Session</button>
+            <div style="margin-top: 15px; font-size: 0.8em; color: #666; cursor: pointer;" onclick="showAdminLogin()">
+                Admin Login</div>
+        </div>
+    </div>
+
+    <!-- ADMIN LOGIN MODAL -->
+    <div id="adminLoginModal" class="modal-overlay hidden">
+        <div class="modal">
+            <h2>🛡️ Admin Access</h2>
+            <input type="password" id="adminPasswordInput" placeholder="Enter password..."
+                onkeypress="if(event.key==='Enter') submitAdminLogin()">
+            <button onclick="submitAdminLogin()">Login</button>
+            <button onclick="hideAdminLogin()" style="background: #444; margin-top: 10px;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- ADMIN DASHBOARD MODAL -->
+    <div id="adminDashboardModal" class="modal-overlay hidden">
+        <div class="modal" style="width: 500px;">
+            <h2>🎛️ Admin Dashboard</h2>
+            <div id="adminUserList" class="user-list">
+                <!-- Users will be populated here -->
+            </div>
+            <button onclick="closeAdminDashboard()" style="background: #444;">Close</button>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <div class="main-content">
+            <div class="video-header">
+                <div class="logo"><span style="color:#ff0000">▶</span> SyncStream</div>
+                <div class="controls">
+                    <input type="text" id="m3u8Input" placeholder="Paste URL..." style="flex:1;">
+                    <button onclick="manualLoad()">Load</button>
+                    <button id="syncBtn" onclick="syncAll()">⚡ Sync</button>
+                    <button id="micBtn" onclick="toggleMic()">🎤 Mic</button>
+                    <div class="volume-control">
+                        <span class="volume-label">🔊</span>
+                        <input type="range" id="voiceVolume" min="0" max="2" step="0.1" value="1"
+                            oninput="updateVoiceVolume(this.value)">
+                    </div>
+                </div>
+            </div>
+
+            <div class="video-container">
+                <video id="my-video" class="video-js vjs-theme-fantasy vjs-big-play-centered" controls preload="auto"
+                    data-setup='{}'>
+                    <p class="vjs-no-js">To view this video please enable JavaScript, and consider upgrading to a web
+                        browser that supports HTML5 video</p>
+                </video>
+                <!-- Fullscreen Chat Overlay Container -->
+                <div id="fullscreenChatOverlay" class="vjs-chat-overlay"></div>
+            </div>
+
+            <div class="status-bar">
+                <div id="audioStatus" class="audio-status">🔊 Receiving Audio...</div>
+                <div id="status" class="status disconnected">Disconnected</div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <!-- Chat Section -->
+            <div class="chat-section">
+                <div class="chat-header">
+                    <span>Live Chat</span>
+                    <span style="font-size:0.8em; color:#aaa;">👥</span>
+                </div>
+                <div id="chatMessages">
+                    <div class="chat-msg" style="justify-content:center; color:#666; font-style:italic;">Welcome to
+                        SyncStream</div>
+                </div>
+                <div class="chat-input-area">
+                    <input type="text" id="chatInput" placeholder="Say something..." onkeypress="handleChatKey(event)">
+                    <button onclick="sendChat()"
+                        style="background:transparent; padding:0; color:#3ea6ff; font-size:1.2em;">➤</button>
+                </div>
+            </div>
+
+            <!-- Library Section -->
+            <div class="library-section">
+                <div class="library-header">
+                    <span>Up Next</span>
+                    <button onclick="refreshLibrary()"
+                        style="background:transparent; padding:0; font-size:1.2em;">🔄</button>
+                </div>
+                <div id="libraryList" class="library-list">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    <script>
+        // CONFIG
+        const SAMPLE_RATE = 16000;
+        const JITTER_BUFFER_MS = 0.05;
+        let MY_NICKNAME = "Guest";
+
+        // STATE
+        let player = videojs('my-video');
+        let ws;
+        let isRemoteUpdate = false;
+        let audioCtx, micCtx, micStream, scriptNode;
+        let compressorNode, gainNode; // Added gainNode
+        let isRecording = false;
+        let peerAudioState = {};
+        let lastAudioPacketTime = 0;
+        let micButtonComponent;
+        let voiceVolume = 1.0;
+
+        // --- 1. SETUP VIDEOJS CUSTOM MIC BUTTON ---
+        function setupVideoJSButton() {
+            const Button = videojs.getComponent('Button');
+            class MicToggle extends Button {
+                constructor(player, options) {
+                    super(player, options);
+                    this.addClass('vjs-mic-button');
+                    this.controlText('Toggle Microphone');
+                }
+                handleClick() {
+                    toggleMic();
+                }
+            }
+            videojs.registerComponent('MicToggle', MicToggle);
+            player.ready(() => {
+                micButtonComponent = player.controlBar.addChild('MicToggle', {}, 0);
+            });
+        }
+
+        function init() {
+            setupVideoJSButton();
+            // Don't connect yet, wait for name
+            document.getElementById('usernameInput').focus();
+        }
+
+        function submitName() {
+            const input = document.getElementById('usernameInput');
+            const name = input.value.trim();
+            if (!name) return alert("Please enter a name");
+
+            MY_NICKNAME = name;
+            document.getElementById('welcomeModal').classList.add('hidden');
+
+            connectWS();
+            refreshLibrary();
+            requestAnimationFrame(updateAudioUI);
+            appendChat("System", "Connected as " + MY_NICKNAME, true);
+        }
+
+        // --- ADMIN FUNCTIONS ---
+        function showAdminLogin() {
+            document.getElementById('welcomeModal').classList.add('hidden');
+            document.getElementById('adminLoginModal').classList.remove('hidden');
+            document.getElementById('adminPasswordInput').focus();
+        }
+
+        function hideAdminLogin() {
+            document.getElementById('adminLoginModal').classList.add('hidden');
+            document.getElementById('welcomeModal').classList.remove('hidden');
+        }
+
+        function submitAdminLogin() {
+            const pass = document.getElementById('adminPasswordInput').value;
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                // Connect first if not connected (admin logging in from start)
+                MY_NICKNAME = "Admin";
+                connectWS();
+                // Wait for connection
+                const check = setInterval(() => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        clearInterval(check);
+                        ws.send(JSON.stringify({ type: 'admin-login', password: pass }));
+                    }
+                }, 100);
+            } else {
+                ws.send(JSON.stringify({ type: 'admin-login', password: pass }));
+            }
+        }
+
+        function closeAdminDashboard() {
+            document.getElementById('adminDashboardModal').classList.add('hidden');
+        }
+
+        function openAdminDashboard() {
+            document.getElementById('adminDashboardModal').classList.remove('hidden');
+        }
+
+        function kickUser(id) {
+            if (confirm("Kick this user?")) {
+                ws.send(JSON.stringify({ type: 'kick-user', targetId: id }));
+            }
+        }
+
+        function renderUserList(users) {
+            const list = document.getElementById('adminUserList');
+            list.innerHTML = '';
+            if (users.length === 0) {
+                list.innerHTML = '<div style="padding:10px; color:#888;">No users connected</div>';
+                return;
+            }
+            users.forEach(u => {
+                const div = document.createElement('div');
+                div.className = 'user-row';
+                div.innerHTML = `
+                    <span>${u.nick} ${u.isAdmin ? '<span class="admin-badge">ADMIN</span>' : ''} (ID: ${u.id})</span>
+                    ${!u.isAdmin ? `<button class="kick-btn" onclick="kickUser(${u.id})">Kick</button>` : ''}
+                `;
+                list.appendChild(div);
+            });
+
+            // If dashboard is not open, maybe open it? Or add a button to main UI to open it?
+            // For now, let's just ensure the modal is visible if we just logged in
+            if (!document.getElementById('adminBtn')) {
+                // We don't auto-open on every update, but we need a way to open it.
+                // Let's add an Admin button to the controls if we are admin.
+                addAdminButton();
+            }
+        }
+
+        function addAdminButton() {
+            if (!document.getElementById('adminBtn')) {
+                const controls = document.querySelector('.controls');
+                const btn = document.createElement('button');
+                btn.id = 'adminBtn';
+                btn.innerText = '🛡️ Admin';
+                btn.style.backgroundColor = '#673ab7';
+                btn.onclick = openAdminDashboard;
+                controls.appendChild(btn);
+            }
+        }
+
+        async function refreshLibrary() {
+            const list = document.getElementById('libraryList');
+            list.innerHTML = '<div style="padding:10px; color:#666;">Scanning...</div>';
+            try {
+                const res = await fetch('/api/library');
+                const files = await res.json();
+                list.innerHTML = '';
+                if (files.length === 0) { list.innerHTML = '<div style="padding:10px; color:#666;">No files in /downloads</div>'; return; }
+                files.forEach(file => {
+                    const div = document.createElement('div');
+                    div.className = 'file-item';
+                    div.innerHTML = `
+                        <div class="file-thumb">▶</div>
+                        <div class="file-info">
+                            <div class="file-name">${file}</div>
+                            <div class="file-meta">Local Video</div>
+                        </div>
+                    `;
+                    div.onclick = () => { playVideo(`/downloads/${file}`); sendSync('load', 0, `/downloads/${file}`); };
+                    list.appendChild(div);
+                });
+            } catch (e) { list.innerHTML = 'Error loading library'; }
+        }
+
+        function manualLoad() {
+            const url = document.getElementById('m3u8Input').value;
+            if (url) { playVideo(url); sendSync('load', 0, url); }
+        }
+
+        // --- MANUAL SYNC ALL FUNCTION ---
+        function syncAll() {
+            const time = player.currentTime();
+            const paused = player.paused();
+            const url = document.getElementById('m3u8Input').value;
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                // Send 'forceSync' type which forces the other clients to ignore drift thresholds
+                ws.send(JSON.stringify({
+                    type: 'forceSync',
+                    time: time,
+                    url: url,
+                    paused: paused
+                }));
+
+                // Visual feedback on the button
+                const btn = document.getElementById('syncBtn');
+                const prevText = btn.innerText;
+                btn.innerText = "✓ Sent";
+                btn.style.background = "#4caf50"; // Green
+                setTimeout(() => {
+                    btn.innerText = prevText;
+                    btn.style.background = ""; // Revert to CSS default (Blue)
+                }, 1000);
+            }
+        }
+
+        function playVideo(url) {
+            ensureAudioContext();
+            document.getElementById('m3u8Input').value = url;
+            let type = 'application/x-mpegURL';
+            if (url.match(/\.(mp4|webm|mkv)$/i)) type = 'video/mp4';
+
+            let src = url;
+            if (!url.startsWith("/") && !url.includes(window.location.host) && type === 'application/x-mpegURL') {
+                src = `/api/proxy?url=${btoa(url)}`;
+            }
+
+            player.src({ src: src, type: type });
+            player.play().catch(() => { });
+
+            document.querySelectorAll('.file-item').forEach(el => {
+                el.classList.remove('active');
+                if (url.includes(el.querySelector('.file-name').innerText)) el.classList.add('active');
+            });
+        }
+
+        function connectWS() {
+            const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+            ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => {
+                document.getElementById('status').innerText = "🟢 Connected";
+                document.getElementById('status').className = "status connected";
+                // Send identification
+                ws.send(JSON.stringify({ type: 'identify', nick: MY_NICKNAME }));
+            };
+
+            ws.onmessage = (event) => {
+                const data = event.data;
+                if (data instanceof ArrayBuffer) {
+                    const view = new DataView(data);
+                    const userId = view.getUint32(0);
+                    playPCMChunk(data.slice(4), userId);
+                } else {
+                    try {
+                        const msg = JSON.parse(data);
+                        if (msg.type === 'chat') {
+                            appendChat(msg.nick, msg.text);
+                        } else if (msg.type === 'admin-success') {
+                            document.getElementById('adminLoginModal').classList.add('hidden');
+                            openAdminDashboard();
+                            addAdminButton();
+                            appendChat("System", "Admin Access Granted", true);
+                        } else if (msg.type === 'admin-fail') {
+                            alert("Wrong Password!");
+                        } else if (msg.type === 'user-list') {
+                            renderUserList(msg.users);
+                        } else {
+                            handleRemoteEvent(msg);
+                        }
+                    } catch (e) { }
+                }
+            };
+
+            ws.onclose = () => {
+                document.getElementById('status').innerText = "🔴 Reconnecting...";
+                document.getElementById('status').className = "status disconnected";
+                setTimeout(connectWS, 5000);
+            };
+        }
+
+        function sendSync(type, time, url = null) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type, time, url }));
+            }
+        }
+
+        // --- CHAT LOGIC ---
+        function handleChatKey(e) {
+            if (e.key === 'Enter') sendChat();
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chatInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'chat', text: text, nick: MY_NICKNAME }));
+            }
+            appendChat("Me", text);
+            input.value = '';
+        }
+
+        function getInitials(name) {
+            return name.substring(0, 2).toUpperCase();
+        }
+
+        function getColor(name) {
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const c = (hash & 0x00FFFFFF).toString(16).toUpperCase();
+            return '#' + "00000".substring(0, 6 - c.length) + c;
+        }
+
+        function appendChat(nick, text, isSystem = false) {
+            const container = document.getElementById('chatMessages');
+            const overlay = document.getElementById('fullscreenChatOverlay');
+
+            // Create Message Element
+            const div = document.createElement('div');
+            div.className = 'chat-msg';
+
+            if (isSystem) {
+                div.style.justifyContent = 'center';
+                div.style.color = '#666';
+                div.style.fontStyle = 'italic';
+                div.innerText = text;
+            } else {
+                const initials = getInitials(nick);
+                const color = getColor(nick);
+                const safeText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                const safeNick = nick.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+                div.innerHTML = `
+                    <div class="chat-avatar" style="background:${color}">${initials}</div>
+                    <div class="chat-content">
+                        <div class="chat-author">
+                            ${safeNick}
+                            ${nick === 'Admin' ? '<span class="admin-badge">ADMIN</span>' : ''}
+                        </div>
+                        <div class="chat-text">${safeText}</div>
+                    </div>
+                `;
+            }
+
+            // Append to Main Chat
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+
+            // Append to Overlay (Clone)
+            if (overlay && !isSystem) {
+                const clone = div.cloneNode(true);
+                overlay.appendChild(clone);
+                overlay.scrollTop = overlay.scrollHeight;
+                // Keep overlay clean (max 10 messages)
+                while (overlay.children.length > 10) {
+                    overlay.removeChild(overlay.firstChild);
+                }
+            }
+        }
+
+        // --- VIDEO SYNC LOGIC ---
+        function handleRemoteEvent(data) {
+            isRemoteUpdate = true;
+            if (data.type === 'load' && data.url) {
+                if (player.currentSrc() !== data.url && !player.currentSrc().includes(data.url)) playVideo(data.url);
+            }
+
+            // LOGIC UPDATE: Force seek if 'forceSync' OR drift > 2 seconds
+            if (data.type === 'forceSync' || Math.abs(player.currentTime() - data.time) > 2) {
+                player.currentTime(data.time);
+            }
+
+            if (data.type === 'play') player.play().catch(() => { });
+            else if (data.type === 'pause') player.pause();
+            else if (data.type === 'seek') player.currentTime(data.time);
+            else if (data.type === 'forceSync') {
+                if (data.paused) player.pause();
+                else player.play().catch(() => { });
+            }
+
+            setTimeout(() => { isRemoteUpdate = false; }, 500);
+        }
+
+        player.on('play', () => { ensureAudioContext(); if (!isRemoteUpdate) sendSync('play', player.currentTime()); });
+        player.on('pause', () => { if (!isRemoteUpdate) sendSync('pause', player.currentTime()); });
+        player.on('seeked', () => { if (!isRemoteUpdate) sendSync('seek', player.currentTime()); });
+
+        // --- AUDIO ENGINE ---
+        function updateVoiceVolume(val) {
+            voiceVolume = parseFloat(val);
+            if (gainNode) {
+                gainNode.gain.setValueAtTime(voiceVolume, audioCtx.currentTime);
+            }
+        }
+
+        function ensureAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+
+                // Create Gain Node for Volume Control
+                gainNode = audioCtx.createGain();
+                gainNode.gain.value = voiceVolume;
+                gainNode.connect(audioCtx.destination);
+
+                compressorNode = audioCtx.createDynamicsCompressor();
+                compressorNode.threshold.setValueAtTime(-20, audioCtx.currentTime);
+                compressorNode.knee.setValueAtTime(40, audioCtx.currentTime);
+                compressorNode.ratio.setValueAtTime(12, audioCtx.currentTime);
+                compressorNode.attack.setValueAtTime(0, audioCtx.currentTime);
+                compressorNode.release.setValueAtTime(0.25, audioCtx.currentTime);
+                // Connect Compressor -> Gain -> Destination
+                compressorNode.connect(gainNode);
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        async function toggleMic() {
+            ensureAudioContext();
+            const btn = document.getElementById('micBtn');
+
+            if (!isRecording) {
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, latency: 0 }
+                    });
+                    micCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+                    const source = micCtx.createMediaStreamSource(micStream);
+
+                    scriptNode = micCtx.createScriptProcessor(2048, 1, 1);
+                    scriptNode.onaudioprocess = (e) => {
+                        if (!isRecording || ws.readyState !== WebSocket.OPEN) return;
+                        const inputData = e.inputBuffer.getChannelData(0);
+                        const pcm16 = convertFloat32ToInt16(inputData, e.inputBuffer.sampleRate, SAMPLE_RATE);
+                        if (pcm16.length > 0) ws.send(pcm16.buffer);
+                    };
+                    source.connect(scriptNode);
+                    scriptNode.connect(micCtx.destination);
+
+                    isRecording = true;
+                    if (micButtonComponent) micButtonComponent.addClass('recording');
+                    if (btn) { btn.classList.add('recording'); btn.innerText = "🎤 Mic ON"; }
+                } catch (err) { alert("Mic Error: " + err); }
+            } else {
+                if (micStream) micStream.getTracks().forEach(t => t.stop());
+                if (scriptNode) scriptNode.disconnect();
+                if (micCtx) micCtx.close();
+                isRecording = false;
+                if (micButtonComponent) micButtonComponent.removeClass('recording');
+                if (btn) { btn.classList.remove('recording'); btn.innerText = "🎤 Mic Off"; }
+            }
+        }
+
+        function convertFloat32ToInt16(buffer, fromRate, toRate) {
+            const ratio = fromRate / toRate;
+            const newLength = Math.ceil(buffer.length / ratio);
+            const result = new Int16Array(newLength);
+            let offsetResult = 0, offsetBuffer = 0;
+            while (offsetResult < newLength) {
+                const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+                let accum = 0, count = 0;
+                for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                    accum += buffer[i];
+                    count++;
+                }
+                const avg = count > 0 ? accum / count : 0;
+                const s = Math.max(-1, Math.min(1, avg));
+                result[offsetResult] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                offsetResult++;
+                offsetBuffer = nextOffsetBuffer;
+            }
+            return result;
+        }
+
+        function updateAudioUI() {
+            const el = document.getElementById('audioStatus');
+            const now = Date.now();
+            if (now - lastAudioPacketTime < 200) el.style.opacity = '1';
+            else el.style.opacity = '0';
+            requestAnimationFrame(updateAudioUI);
+        }
+
+        function playPCMChunk(arrayBuffer, userId) {
+            ensureAudioContext();
+            lastAudioPacketTime = Date.now();
+            if (!peerAudioState[userId]) { peerAudioState[userId] = { nextPlayTime: 0 }; }
+            const peer = peerAudioState[userId];
+            const int16Data = new Int16Array(arrayBuffer);
+            const float32Data = new Float32Array(int16Data.length);
+            for (let i = 0; i < int16Data.length; i++) {
+                const int = int16Data[i];
+                float32Data[i] = int < 0 ? int / 0x8000 : int / 0x7FFF;
+            }
+            const audioBuffer = audioCtx.createBuffer(1, float32Data.length, SAMPLE_RATE);
+            audioBuffer.getChannelData(0).set(float32Data);
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuffer;
+            // Connect Source -> Compressor -> Gain -> Destination
+            source.connect(compressorNode);
+
+            const now = audioCtx.currentTime;
+            let startTime = peer.nextPlayTime;
+            if (startTime < now || startTime > now + 0.3) { startTime = now + JITTER_BUFFER_MS; }
+
+            source.start(startTime);
+            peer.nextPlayTime = startTime + audioBuffer.duration;
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
