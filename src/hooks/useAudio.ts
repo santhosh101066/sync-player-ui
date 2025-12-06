@@ -1,71 +1,107 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useWebSocket } from '../context/WebSocketContext';
 
-// We will capture at hardware rate (usually 48k) but only send 16k
-const TARGET_SAMPLE_RATE = 16000; 
+// We will capture at hardware rate but only send 16k
+const TARGET_SAMPLE_RATE = 16000;
 const JITTER_BUFFER_MS = 0.25; // 250ms buffer for stability
 
-// --- WORKLET (Downsampling + Batching) ---
+// --- OPTIMIZED AUDIO WORKLET ---
 const WORKLET_CODE = `
 class MicProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.silenceThreshold = 0.02;
+    // OPTIMIZATION 1: Sensitivity
+    // Lowered from 0.02 to 0.002 to capture whispers/soft endings
+    this.silenceThreshold = 0.01; 
+    
+    // OPTIMIZATION 2: Hangover Time
+    // 150 frames * ~2.9ms per frame = ~435ms. 
+    // This keeps the mic open long enough for the "tails" of words.
+    this.HANG_TIME = 150; 
+    
     this.hangoverFrames = 0;
-    this.HANG_TIME = 30; // ~200ms hold time
     
     // Buffer for the DOWNSAMPLED audio
-    // We send chunks of 2048 samples (approx 128ms at 16kHz)
     this.chunkBuffer = new Int16Array(2048); 
     this.chunkIndex = 0;
+
+    // OPTIMIZATION 3: High-Pass Filter State (Removes mud/rumble)
+    this.prevIn = 0;
+    this.prevOut = 0;
   }
 
   process(inputs, outputs, parameters) {
     const input = inputs[0];
-    if (input && input.length > 0) {
-      const channel = input[0];
-      
-      // 1. Calculate Volume (RMS)
-      let sumSquares = 0;
-      for (let i = 0; i < channel.length; i++) sumSquares += channel[i] * channel[i];
-      const rms = Math.sqrt(sumSquares / channel.length);
+    if (!input || input.length === 0) return true;
 
-      // 2. Gate Logic
-      if (rms > this.silenceThreshold) this.hangoverFrames = this.HANG_TIME;
-      
-      if (this.hangoverFrames > 0) {
-        if (rms <= this.silenceThreshold) this.hangoverFrames--;
+    const channel = input[0];
+    
+    // We create a temporary buffer for the filtered audio
+    // This ensures we calculate volume based on the CLEAN signal
+    const processedChannel = new Float32Array(channel.length);
 
-        // 3. DOWNSAMPLE LOGIC (The Bandwidth Saver)
-        // Most mics are 48kHz. We want 16kHz. 
-        // 48000 / 16000 = 3. We take every 3rd sample.
-        // We estimate the ratio dynamically just in case.
+    // --- STEP A: High-Pass Filter (80Hz cutoff @ 48kHz) ---
+    // Algorithm: y[i] = alpha * (y[i-1] + x[i] - x[i-1])
+    const alpha = 0.985; 
+
+    for (let i = 0; i < channel.length; i++) {
+        const x = channel[i];
+        const y = alpha * (this.prevOut + x - this.prevIn);
         
-        // Note: In a real Worklet, sampleRate is a global variable
-        const ratio = sampleRate / 16000; 
-        
-        for (let i = 0; i < channel.length; i += ratio) {
-          // Simple decimation (taking every Nth sample)
-          const idx = Math.floor(i);
-          if (idx < channel.length) {
-             const sample = channel[idx];
-
-             if (this.chunkIndex < this.chunkBuffer.length) {
-                // Float to Int16
-                let s = Math.max(-1, Math.min(1, sample));
-                this.chunkBuffer[this.chunkIndex] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                this.chunkIndex++;
-             }
-          }
-        }
-
-        // 4. Send when buffer is full
-        if (this.chunkIndex >= this.chunkBuffer.length) this.flush();
-
-      } else if (this.chunkIndex > 0) {
-        this.flush();
-      }
+        processedChannel[i] = y;
+        this.prevIn = x;
+        this.prevOut = y;
     }
+
+    // --- STEP B: Calculate Volume (RMS) on Filtered Data ---
+    let sumSquares = 0;
+    for (let i = 0; i < processedChannel.length; i++) {
+        sumSquares += processedChannel[i] * processedChannel[i];
+    }
+    const rms = Math.sqrt(sumSquares / processedChannel.length);
+
+    // --- STEP C: Noise Gate Logic ---
+    if (rms > this.silenceThreshold) {
+        this.hangoverFrames = this.HANG_TIME;
+    }
+
+    if (this.hangoverFrames > 0) {
+      // If gate is open, decrement timer if below threshold
+      if (rms <= this.silenceThreshold) {
+          this.hangoverFrames--;
+      }
+
+      // --- STEP D: Downsampling (48k -> 16k) ---
+      // We use the 'processedChannel' (filtered audio) here
+      const ratio = sampleRate / 16000; 
+      
+      for (let i = 0; i < processedChannel.length; i += ratio) {
+        const idx = Math.floor(i);
+        if (idx < processedChannel.length) {
+           let sample = processedChannel[idx];
+
+           if (this.chunkIndex < this.chunkBuffer.length) {
+              // OPTIMIZATION 4: Soft Clipping
+              // Instead of hard-clipping at 1.0, we clamp safely
+              // to prevent crackling if someone yells.
+              if (sample > 1.0) sample = 1.0;
+              if (sample < -1.0) sample = -1.0;
+              
+              // Convert Float to Int16
+              this.chunkBuffer[this.chunkIndex] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+              this.chunkIndex++;
+           }
+        }
+      }
+
+      // Send when buffer is full
+      if (this.chunkIndex >= this.chunkBuffer.length) this.flush();
+
+    } else if (this.chunkIndex > 0) {
+      // Flush leftover data if gate closes so packets don't get stuck
+      this.flush();
+    }
+    
     return true;
   }
 
@@ -80,10 +116,12 @@ registerProcessor('mic-processor', MicProcessor);
 `;
 
 export const useAudio = () => {
-    const { sendBinary, subscribeToAudio, userMap } = useWebSocket();
+    // 1. Get all necessary items from Context
+    const { sendAudio, myUserId, subscribeToAudio, userMap } = useWebSocket();
+
     const [isRecording, setIsRecording] = useState(false);
     const [volume, setVolume] = useState(1.0);
-    const volumeRef = useRef(1.0); 
+    const volumeRef = useRef(1.0);
     const [activeSpeakers, setActiveSpeakers] = useState<string[]>([]);
     const [audioBlocked, setAudioBlocked] = useState(false);
 
@@ -96,10 +134,9 @@ export const useAudio = () => {
 
     const handleSetVolume = (val: number) => { setVolume(val); volumeRef.current = val; };
 
-    // 1. RECEIVER INIT (Standard 16kHz Context)
+    // 2. RECEIVER INIT (Standard 16kHz Context)
     const initAudio = useCallback(() => {
         if (!audioCtxRef.current) {
-            // We set the context to 16kHz to match our downsampled data
             audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
                 sampleRate: TARGET_SAMPLE_RATE,
                 latencyHint: 'interactive'
@@ -111,7 +148,7 @@ export const useAudio = () => {
         return audioCtxRef.current;
     }, []);
 
-    // 2. RECEIVER LOGIC
+    // 3. RECEIVER LOGIC
     useEffect(() => {
         const handleAudioData = (data: ArrayBuffer) => {
             if (!audioCtxRef.current) initAudio();
@@ -123,11 +160,14 @@ export const useAudio = () => {
             }
 
             const view = new DataView(data);
-            const userId = view.getUint32(0, false);
+            const userId = view.getUint32(0, false); // Read User ID from first 4 bytes
+
+            // Mark speaker as active
             speakerActivityRef.current.set(userId, Date.now());
 
             if (ctx.state === 'suspended') return;
 
+            // Extract PCM (skip first 4 bytes)
             const pcmBuffer = data.slice(4);
             const int16Data = new Int16Array(pcmBuffer);
             const float32Data = new Float32Array(int16Data.length);
@@ -151,8 +191,8 @@ export const useAudio = () => {
 
             let scheduleTime = peer.nextTime;
             const now = ctx.currentTime;
-            
-            // Sync Logic: If drifted too far, reset
+
+            // Sync Logic
             if (scheduleTime < now) scheduleTime = now + (JITTER_BUFFER_MS / 2);
             else if (scheduleTime > now + 1.0) scheduleTime = now + JITTER_BUFFER_MS;
 
@@ -164,9 +204,10 @@ export const useAudio = () => {
         return () => unsubscribe();
     }, [subscribeToAudio, initAudio]);
 
-    // 3. MICROPHONE LOGIC (With Downsampling Worklet)
+    // 4. MICROPHONE LOGIC
     const toggleMic = useCallback(async () => {
         if (isRecording) {
+            // STOP RECORDING
             micStreamRef.current?.getTracks().forEach(t => t.stop());
             micStreamRef.current = null;
             if (workletNodeRef.current) {
@@ -176,44 +217,71 @@ export const useAudio = () => {
             workletNodeRef.current = null;
             setIsRecording(false);
         } else {
+            // START RECORDING
             try {
-                // Initialize audio context at native rate for Mic input
-                // Note: We create a temporary context or reuse existing one, 
-                // but capturing at 'default' hardware rate is safest.
+                if (!myUserId) {
+                    alert("Not connected to server yet!");
+                    return;
+                }
+
                 const ctx = initAudio();
-                
+
                 try {
                     const blob = new Blob([WORKLET_CODE], { type: 'application/javascript' });
                     await ctx.audioWorklet.addModule(URL.createObjectURL(blob));
-                } catch(e) {}
+                } catch (e) {
+                    console.error(e);
+                }
 
-                // Capture at default rate (e.g. 48k)
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: { 
-                        echoCancellation: true, 
-                        noiseSuppression: true, 
-                        autoGainControl: true 
-                    } 
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        autoGainControl: true,
+                        noiseSuppression: true,
+                        // @ts-ignore
+                        voiceIsolation: true,
+                        latency: 0,
+                        sampleRate: TARGET_SAMPLE_RATE,
+                        channelCount: 1,
+
+                    }
                 });
                 micStreamRef.current = stream;
-                
+
                 const source = ctx.createMediaStreamSource(stream);
                 const workletNode = new AudioWorkletNode(ctx, 'mic-processor');
                 workletNodeRef.current = workletNode;
 
                 workletNode.port.onmessage = (e) => {
-                   sendBinary(e.data);
+                    // e.data is the Int16Array PCM buffer
+                    const pcmData = e.data;
+
+                    // Construct Packet: [UserID (4 bytes)] + [PCM Data]
+                    const totalLen = 4 + pcmData.byteLength;
+                    const buffer = new ArrayBuffer(totalLen);
+                    const view = new DataView(buffer);
+
+                    // Write UserID (Big Endian to match receiver)
+                    view.setUint32(0, myUserId, false);
+
+                    // Copy PCM
+                    const destInt16 = new Int16Array(buffer, 4);
+                    const srcInt16 = new Int16Array(pcmData);
+                    destInt16.set(srcInt16);
+
+                    sendAudio(buffer);
                 };
 
                 source.connect(workletNode);
-                workletNode.connect(ctx.destination);
+                // Do NOT connect to ctx.destination (no self-monitoring)
+
                 setIsRecording(true);
             } catch (e) {
                 console.error("Mic Error", e);
                 alert("Mic Error: " + e);
             }
         }
-    }, [isRecording, initAudio, sendBinary]);
+    }, [isRecording, initAudio, sendAudio, myUserId]);
 
     // Active Speaker Poller
     useEffect(() => {

@@ -2,38 +2,26 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useWebSocket } from '../context/WebSocketContext';
 import { Send } from 'lucide-react';
 
-interface ChatMessage {
-    nick: string;
-    text: string;
-    isAdmin?: boolean;
-    isSystem?: boolean; // Added isSystem
-}
-
 export const Chat: React.FC = () => {
-    const { send, lastMessage, nickname } = useWebSocket();
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    // [FIX] Use global chat state instead of local state
+    const { send, nickname, chatMessages, addLocalMessage } = useWebSocket();
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        if (lastMessage && lastMessage.type === 'chat') {
-            setMessages(prev => [...prev, { 
-                nick: lastMessage.nick, 
-                text: lastMessage.text, 
-                isAdmin: lastMessage.isAdmin,
-                isSystem: lastMessage.isSystem // Capture system flag
-            }]);
-        }
-    }, [lastMessage]);
-
+    // Auto-scroll to bottom when messages change
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    }, [chatMessages]);
 
     const sendMessage = () => {
         if (!input.trim()) return;
+        
+        // 1. Send to server
         send({ type: 'chat', text: input, nick: nickname });
-        setMessages(prev => [...prev, { nick: nickname, text: input, isAdmin: false }]);
+        
+        // 2. Add to local history instantly (Optimistic UI)
+        addLocalMessage(input);
+        
         setInput('');
     };
 
@@ -44,7 +32,7 @@ export const Chat: React.FC = () => {
                     👋 Welcome to the session
                 </div>
                 
-                {messages.map((msg, i) => {
+                {chatMessages.map((msg, i) => {
                     // --- HANDLE SYSTEM MESSAGES ---
                     if (msg.isSystem) {
                         return (

@@ -1,42 +1,173 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+/* =========================================
+   CUSTOM COMPONENT STYLES
+   ========================================= */
+
+/* --- Fullscreen Mic Button (Floating) --- */
+.vjs-fs-mic-control {
+  position: absolute;
+  bottom: 30px;
+  /* Above control bar */
+  left: 20px;
+  z-index: 2000;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.fs-mic-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 30px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.fs-mic-btn.is-muted {
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.fs-mic-btn.is-muted:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border-color: white;
+}
+
+.fs-mic-btn.is-live {
+  background: var(--danger, #ef4444);
+  border: 2px solid var(--danger, #ef4444);
+  color: white;
+  animation: pulse-red 2s infinite;
+}
+
+.fs-mic-btn.is-live:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+/* =========================================
+   MOBILE RESPONSIVE LAYOUT
+   (Video -> Controls -> Chat)
+   ========================================= */
+
+@media (max-width: 900px) {
+
+  /* 1. Main Layout Wrapper */
+  .app-layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
   }
-  to {
-    transform: rotate(360deg);
+
+  /* 2. Flatten Structure for Reordering */
+  .app-container {
+    display: contents;
   }
-}
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+  /* 3. ORDER 1: Video Player (Top) */
+  .main-content {
+    order: 1;
+    width: 100%;
+    flex: 0 0 auto;
+    background: #000;
+    z-index: 10;
   }
-}
 
-.card {
-  padding: 2em;
-}
+  /* 4. ORDER 2: Header & Controls (Middle) */
+  .video-header {
+    order: 2;
+    height: auto;
+    min-height: 60px;
+    padding: 12px;
+    background: var(--bg-panel, #18181b);
+    border-bottom: 1px solid var(--border, #3f3f46);
+    flex-wrap: wrap;
+    /* Allow wrapping */
+    gap: 10px;
+    z-index: 9;
+  }
 
-.read-the-docs {
-  color: #888;
+  /* 5. ORDER 3: Sidebar/Chat (Bottom - Fills Space) */
+  .sidebar {
+    order: 3;
+    width: 100% !important;
+    flex: 1;
+    border-left: none;
+    min-height: 0;
+  }
+
+  /* --- Mobile UI Tweaks --- */
+
+  .logo {
+    display: none;
+  }
+
+  /* Input Group: Full Width, First Row */
+  .input-group {
+    width: 100%;
+    order: -2;
+    margin-bottom: 5px;
+  }
+
+  .video-header input[type="text"] {
+    width: 100%;
+  }
+
+  /* Controls Row: Sync, Load, Mic */
+  .controls {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    /* Allow volume to wrap */
+  }
+
+  .video-header button {
+    flex: 1;
+    height: 44px;
+    justify-content: center;
+    white-space: nowrap;
+  }
+
+  /* [NEW] Volume Control: Visible, Full Width Row */
+  .volume-control {
+    display: flex !important;
+    /* Force visible */
+    width: 100%;
+    order: 10;
+    /* Push to bottom of header */
+    margin-top: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 8px 12px;
+    border-radius: 8px;
+    justify-content: center;
+  }
+
+  .volume-control input[type="range"] {
+    flex: 1;
+    /* Slider takes full remaining width */
+    max-width: none;
+  }
+
+  /* Chat Overlay Position */
+  .vjs-chat-overlay {
+    width: 70%;
+    bottom: 20px;
+    right: 10px;
+  }
+
+  .sidebar-tabs {
+    padding: 0;
+  }
+
+  .tab-btn {
+    padding: 15px 0;
+    font-size: 1rem;
+  }
 }
