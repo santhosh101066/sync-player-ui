@@ -33,6 +33,7 @@ interface WebSocketContextType {
   userMap: Record<number, string>;
   connectedUsers: ConnectedUser[];
   userControlsAllowed: boolean;
+  proxyEnabled: boolean;
   chatMessages: UIChatMessage[];
   addLocalMessage: (text: string) => void;
 }
@@ -55,6 +56,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   const [userMap, setUserMap] = useState<Record<number, string>>({});
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([]);
   const [userControlsAllowed, setUserControlsAllowed] = useState(false);
+  const [proxyEnabled, setProxyEnabled] = useState(true);
   const [chatMessages, setChatMessages] = useState<UIChatMessage[]>([]);
 
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -178,6 +180,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         if (msg.type === 'system-state') {
           setUserControlsAllowed(msg.userControlsAllowed);
+          if (msg.proxyEnabled !== undefined) setProxyEnabled(msg.proxyEnabled);
         }
         if (msg.type === 'admin-success') {
           setIsAdmin(true);
@@ -281,6 +284,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         userMap,
         connectedUsers,
         userControlsAllowed,
+        proxyEnabled,
         chatMessages,
         addLocalMessage
       }}

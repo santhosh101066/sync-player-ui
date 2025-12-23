@@ -15,13 +15,15 @@ export type ClientMessage =
     | { type: 'timeUpdate'; time: number; paused: boolean }
     | { type: 'toggle-user-controls'; value: boolean }
     | { type: 'mute-user'; targetId: number }
-    | { type: 'kick-user'; targetId: number } | { type: 'ping' } | { type: 'pong' };
+    | { type: 'kick-user'; targetId: number }
+    | { type: 'toggle-proxy'; value: boolean }
+    | { type: 'ping' } | { type: 'pong' };
 
 // --- Messages received FROM Server BY Client ---
 export type ServerMessage =
     | { type: 'welcome'; userId: number }
     | { type: 'user-list'; users: ConnectedUser[] }
-    | { type: 'system-state'; userControlsAllowed: boolean; usersControlsAllowed?: boolean } // Handle potential typo support
+    | { type: 'system-state'; userControlsAllowed: boolean; usersControlsAllowed?: boolean; proxyEnabled?: boolean } // Handle potential typo support
     | { type: 'admin-success' }
     | { type: 'admin-fail' }
     | { type: 'chat'; nick: string; text: string; isAdmin?: boolean; isSystem?: boolean }

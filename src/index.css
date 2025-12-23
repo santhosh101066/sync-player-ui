@@ -370,6 +370,7 @@ button.recording {
 
 .volume-control input[type="range"] {
   -webkit-appearance: none;
+  appearance: none;
   /* Remove default styling */
   width: 80px;
   height: 4px;
@@ -705,4 +706,11 @@ button.recording {
   50% {
     transform: scaleY(0.5);
   }
+}
+
+/* --- QUALITY SELECTOR ICON --- */
+.vjs-quality-selector .vjs-icon-placeholder:before {
+  content: '\f110';
+  /* Video.js specific cog icon */
+  font-family: VideoJS;
 }

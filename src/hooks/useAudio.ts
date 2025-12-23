@@ -131,6 +131,11 @@ export const useAudio = () => {
     const peerAudioStateRef = useRef<Record<number, { nextTime: number }>>({});
     const isResumingRef = useRef(false);
     const speakerActivityRef = useRef<Map<number, number>>(new Map());
+    const myUserIdRef = useRef<number | null>(myUserId);
+
+    useEffect(() => {
+        myUserIdRef.current = myUserId;
+    }, [myUserId]);
 
     const handleSetVolume = (val: number) => { setVolume(val); volumeRef.current = val; };
 
@@ -262,7 +267,11 @@ export const useAudio = () => {
                     const view = new DataView(buffer);
 
                     // Write UserID (Big Endian to match receiver)
-                    view.setUint32(0, myUserId, false);
+                    // Use ref to get the LATEST ID (fixes reconnect issue)
+                    const currentId = myUserIdRef.current;
+                    if (currentId === null) return; // Should not happen if connected
+
+                    view.setUint32(0, currentId, false);
 
                     // Copy PCM
                     const destInt16 = new Int16Array(buffer, 4);

@@ -20,6 +20,7 @@ import {
   Users,
   Unlock,
   Lock,
+  Globe,
 } from "lucide-react";
 import "./App.css";
 import type { ServerMessage } from "./types/types";
@@ -42,6 +43,7 @@ const AppContent: React.FC = () => {
     send,
     isAdmin,
     userControlsAllowed,
+    proxyEnabled,
     lastMessage,
   } = useWebSocket();
 
@@ -119,6 +121,10 @@ const AppContent: React.FC = () => {
 
   const toggleUserControls = () => {
     send({ type: "toggle-user-controls", value: !userControlsAllowed });
+  };
+
+  const toggleProxy = () => {
+    send({ type: "toggle-proxy", value: !proxyEnabled });
   };
 
   const handleManualLoad = () => {
@@ -286,6 +292,26 @@ const AppContent: React.FC = () => {
                 ) : (
                   <Lock size={18} />
                 )}
+              </button>
+              <button
+                onClick={toggleProxy}
+                style={{
+                  background: proxyEnabled
+                    ? "rgba(34, 197, 94, 0.1)"
+                    : "rgba(239, 68, 68, 0.1)",
+                  color: proxyEnabled ? "#22c55e" : "#ef4444",
+                  borderColor: proxyEnabled ? "#22c55e" : "#ef4444",
+                  minWidth: "40px",
+                  padding: "0 8px",
+                }}
+                title={
+                  proxyEnabled
+                    ? "Disable Stream Proxy"
+                    : "Enable Stream Proxy"
+                }
+              >
+                <Globe size={18} />
+                {proxyEnabled ? " ON" : " OFF"}
               </button>
             </>
           )}

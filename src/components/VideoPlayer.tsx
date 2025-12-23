@@ -11,9 +11,177 @@ import { createPortal } from "react-dom";
 import videojs from "video.js";
 import "video.js/dist/video-js.css";
 import "@videojs/themes/dist/fantasy/index.css";
+import "videojs-contrib-quality-levels";
 import { Mic, MicOff } from "lucide-react";
 import { useWebSocket } from "../context/WebSocketContext";
 import type { ServerMessage } from "../types/types";
+
+// --- Custom Video.js Quality Components ---
+
+const MenuItem = videojs.getComponent("MenuItem");
+const MenuButton = videojs.getComponent("MenuButton");
+
+interface QualityLevel {
+  id: string;
+  label: string;
+  width?: number;
+  height?: number;
+  bitrate?: number;
+  enabled: boolean;
+}
+
+interface QualityLevelsPlugin {
+  [index: number]: QualityLevel;
+  length: number;
+  on: (event: string, callback: () => void) => void;
+  off: (event: string, callback: () => void) => void;
+  trigger: (event: string) => void;
+}
+
+// Augment the Player interface (locally if global augmentation is hard in this context)
+// or just cast player to any as we've been doing, but cleaner.
+
+class QualityMenuItem extends MenuItem {
+  qualityLevel: QualityLevel | null;
+  plugin: QualityLevelsPlugin;
+
+  constructor(player: any, options: any) {
+    const { qualityLevel, plugin, label, ...rest } = options;
+    super(player, {
+      label,
+      selectable: true,
+      selected: qualityLevel ? qualityLevel.enabled : false,
+      ...rest,
+    });
+    this.qualityLevel = qualityLevel;
+    this.plugin = plugin;
+
+    // Listen for changes to keep 'selected' state in sync
+    // 'on' in VJS Component can take (target, type, listener)
+    // @ts-ignore
+    this.on(plugin, "change", this.updateSelectionState);
+  }
+
+  dispose() {
+    // @ts-ignore
+    this.off(this.plugin, "change", this.updateSelectionState);
+    super.dispose();
+  }
+
+  updateSelectionState = () => {
+    // If this is the "Auto" item, check if all levels are enabled?
+    // Or just rely on the click handler. 
+    // For specific levels:
+    if (this.qualityLevel) {
+      // @ts-ignore: MenuItem has selected()
+      this.selected(this.qualityLevel.enabled);
+    }
+  };
+
+  handleClick(event: any) {
+    // @ts-ignore
+    super.handleClick(event);
+
+    const levels = this.plugin;
+
+    // "Auto" logic: Enable all levels
+    if (!this.qualityLevel) {
+      for (let i = 0; i < levels.length; i++) {
+        levels[i].enabled = true;
+      }
+    } else {
+      // Specific Level logic: Disable all others, enable this one
+      for (let i = 0; i < levels.length; i++) {
+        const lvl = levels[i];
+        lvl.enabled = lvl.height === this.qualityLevel.height;
+      }
+    }
+  }
+}
+
+class QualityMenuButton extends MenuButton {
+  constructor(player: any, options: any) {
+    super(player, options);
+    this.updateVisibility();
+
+    // Refresh menu when levels are added/removed
+    const qualityLevels = (player as any).qualityLevels ? (player as any).qualityLevels() : null;
+    if (qualityLevels) {
+      player.on(qualityLevels, "addqualitylevel", this.update.bind(this));
+      player.on(qualityLevels, "removequalitylevel", this.update.bind(this));
+      player.on(qualityLevels, "change", this.update.bind(this));
+    }
+  }
+
+  createItems() {
+    const player = this.player();
+    const levels = (player as any).qualityLevels ? (player as any).qualityLevels() : null;
+    const items = [];
+
+    if (!levels || levels.length === 0) return [];
+
+    // 1. "Auto" Option
+    // If all levels are enabled, Auto is selected
+    let isAuto = true;
+    for (let i = 0; i < levels.length; i++) {
+      if (!levels[i].enabled) {
+        isAuto = false;
+        break;
+      }
+    }
+
+    items.push(new QualityMenuItem(player, {
+      plugin: levels,
+      qualityLevel: null, // Null implies "Auto"
+      label: "Auto",
+      selected: isAuto
+    }));
+
+    // 2. Individual Levels
+    // We filter duplicates based on height (resolution)
+    const seenHeights = new Set();
+    // Items are usually added lowest to highest, let's reverse for the menu (Highest on top)
+    for (let i = levels.length - 1; i >= 0; i--) {
+      const level = levels[i];
+      if (seenHeights.has(level.height)) continue;
+
+      seenHeights.add(level.height);
+      items.push(new QualityMenuItem(player, {
+        plugin: levels,
+        qualityLevel: level,
+        label: `${level.height}p`,
+        selected: level.enabled && !isAuto // Only show selected if NOT in Auto mode
+      }));
+    }
+
+    return items;
+  }
+
+  updateVisibility() {
+    const player = this.player();
+    const levels = (player as any).qualityLevels ? (player as any).qualityLevels() : null;
+    // Hide if no levels or only 1 level (no choice needed)
+    if (!levels || levels.length < 2) {
+      this.hide();
+    } else {
+      this.show();
+    }
+  }
+
+  update() {
+    // @ts-ignore
+    super.update();
+    this.updateVisibility();
+  }
+
+  buildCSSClass() {
+    return `vjs-quality-selector ${super.buildCSSClass()}`;
+  }
+}
+
+// Register the component
+videojs.registerComponent("QualityMenuButton", QualityMenuButton);
+
 
 interface PlayVideoDetail {
   url: string;
@@ -46,6 +214,7 @@ const getAvatarColor = (name: string) => {
     "#c084fc",
     "#f472b6",
     "#f43f5e",
+    "#495057",
   ];
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
@@ -66,11 +235,11 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const isRemoteUpdate = useRef(false);
 
   // --- Context ---
-  const { send, lastMessage, isConnected, isAdmin, userControlsAllowed } =
+  const { send, lastMessage, isConnected, isAdmin, userControlsAllowed, proxyEnabled } =
     useWebSocket();
 
   // Use a ref for permissions to access them inside Video.js event closures without dependency issues
-  const permissionsRef = useRef({ isAdmin, userControlsAllowed, isConnected });
+  const permissionsRef = useRef({ isAdmin, userControlsAllowed, isConnected, proxyEnabled });
 
   // --- State ---
   const [overlayChat, setOverlayChat] = useState<FloatingMessage[]>([]);
@@ -134,9 +303,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const player = playerRef.current;
     if (!player || !url) return;
 
-    // Prevent reloading the same source repeatedly
-    if (currentSrcRef.current === url && player.currentSrc().includes(url))
-      return;
     currentSrcRef.current = url;
 
     let type = "application/x-mpegURL"; // Default to HLS
@@ -144,11 +310,27 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     let src = url;
     if (
+      permissionsRef.current.proxyEnabled &&
       !url.startsWith("/") &&
       !url.includes(window.location.host)
     ) {
       // Proxy both HLS and MP4/MKV/WebM to ensure CORS bypass and consistent behavior
       src = `/api/proxy?url=${btoa(url)}`;
+    }
+
+    // Prevent reloading the same source repeatedly (Robust Check)
+    // We check if the player's current source matches our INTENDED source.
+    const currentPlayerSrc = player.currentSrc();
+    // Decode if needed to compare? No, just check if the strings match approximately or if we are switching modes.
+    // Ideally we check if `currentPlayerSrc` ends with `src` or equals it. 
+    // Video.js often resolves absolute URLs.
+
+    // Simplification: logic to detect change is better handled by just checking if we are ALREADY playing this configuration.
+    // If src changed (proxied vs not), we load.
+
+    if (currentPlayerSrc && currentPlayerSrc.includes(src)) {
+      // already playing this exact src (proxied or not)
+      return;
     }
 
     player.src({ src, type });
@@ -161,8 +343,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // --- Effect: Update Permissions Ref ---
   useEffect(() => {
-    permissionsRef.current = { isAdmin, userControlsAllowed, isConnected };
-  }, [isAdmin, userControlsAllowed, isConnected]);
+    permissionsRef.current = { isAdmin, userControlsAllowed, isConnected, proxyEnabled };
+
+    // Auto-reload video if proxy setting changes while playing
+    if (currentSrcRef.current) {
+      playVideo(currentSrcRef.current);
+    }
+  }, [isAdmin, userControlsAllowed, isConnected, proxyEnabled]);
 
   useEffect(() => {
     const handleLocalLoad = (event: CustomEvent<PlayVideoDetail>) => {
@@ -276,6 +463,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           "subsCapsButton",
           "audioTrackButton",
           "videoTrackButton",
+          "qualityMenuButton",
           "fullscreenToggle",
         ],
       },
