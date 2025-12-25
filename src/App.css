@@ -26,8 +26,9 @@
 }
 
 .main-mic-btn.muted {
-  background: var(--danger, #ef4444);
-  border: 1px solid var(--danger, #ef4444);
+  background: var(--bg-element);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
 }
 
 .main-mic-btn.recording {
@@ -75,10 +76,10 @@
 }
 
 .fs-mic-btn.is-live {
-  background: var(--danger, #ef4444);
-  border: 2px solid var(--danger, #ef4444);
+  background: #22c55e;
+  border: 2px solid #22c55e;
   color: white;
-  animation: pulse-red 2s infinite;
+  animation: pulse-green 2s infinite;
 }
 
 .fs-mic-btn.is-live:hover {
@@ -91,6 +92,52 @@
    (Video -> Controls -> Chat)
    ========================================= */
 
+/* =========================================
+   NEW RESPONSIVE HEADER LAYOUT
+   ========================================= */
+
+.header-primary,
+.header-admin,
+.primary-controls,
+.admin-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-primary {
+  flex: 1;
+  /* Take up remaining space on desktop */
+}
+
+.header-spacer {
+  flex-grow: 1;
+}
+
+/* Ensure controls container is flex */
+.controls {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding-right: 8px;
+}
+
+/* Global Header Button Style Override */
+.video-header button,
+.video-header input[type="text"],
+.volume-control {
+  min-height: 40px !important;
+  height: 40px !important;
+  border-radius: 6px !important;
+}
+
+/* Load Button Spacing */
+.video-header button[title="Load URL"] {
+  margin-left: 8px;
+}
+
+
 @media (max-width: 900px) {
 
   /* 1. Main Layout Wrapper */
@@ -98,17 +145,15 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    /* Fallback */
     height: 100dvh;
     overflow: hidden;
   }
 
-  /* 2. Flatten Structure for Reordering */
   .app-container {
     display: contents;
   }
 
-  /* 3. ORDER 2: Video Player (Middle) */
+  /* Video Player (Middle) */
   .main-content {
     order: 2;
     width: 100%;
@@ -117,25 +162,18 @@
     z-index: 10;
   }
 
-  /* 4. ORDER 1: Header & Controls (Top) */
+  /* Header (Top) */
   .video-header {
     order: 1;
     height: auto;
-    min-height: auto;
-    padding: 12px 4px 4px 4px;
-    /* Reduced padding */
+    padding: 8px;
     background: var(--bg-panel, #18181b);
     border-bottom: 1px solid var(--border, #3f3f46);
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 4px;
-    /* Reduced gap */
-    z-index: 9;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  /* 5. ORDER 3: Sidebar/Chat (Bottom - Fills Space) */
+  /* Sidebar/Chat (Bottom) */
   .sidebar {
     order: 3;
     width: 100% !important;
@@ -144,191 +182,90 @@
     flex: 1;
   }
 
-  /* --- Mobile UI Tweaks --- */
+  /* --- FLATTENED HEADER LOGIC --- */
 
-  /* Logo adjustments */
-  .logo span {
-    font-size: 1.0rem !important;
-    /* Smaller icon */
+  /* Force controls to wrap column-wise if needed, or row-wrap */
+  .controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding-right: 0;
   }
 
-  /* HIDE BUTTON TEXT on Mobile (Icon Only) */
+  /* Row 1: Primary (Logo left, Controls right) */
+  .header-primary {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .header-spacer {
+    display: none;
+    /* Don't need spacer on mobile, justify-between handles it */
+  }
+
+  /* Row 2: Admin (Full width, wrapping) */
+  .header-admin {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Admin Actions sub-group */
+  .admin-actions {
+    margin-left: auto;
+    /* Push buttons to right if input is short, or wrap */
+  }
+
+  /* --- Mobile UI Tweaks --- */
+
+  .logo span {
+    font-size: 1.1rem !important;
+  }
+
+  /* HIDE BUTTON TEXT on Mobile */
   .btn-text,
-  .volume-control span,
-  .mic-btn span {
+  .volume-control span {
     display: none !important;
   }
 
   /* Reset Mic Button size for mobile */
   .main-mic-btn {
-    min-width: 28px !important;
-    /* Smaller width */
-    width: 28px !important;
-    height: 28px !important;
-    /* Smaller height */
+    min-width: 0 !important;
+    width: 32px !important;
     padding: 0 !important;
   }
 
-  /* Adjust Volume Control for mobile */
-  .volume-control input[type="range"] {
-    width: 100%;
-    min-width: 50px;
-    height: 4px;
-    /* Thinner slider */
-  }
-
-  /* Make buttons smaller/square-ish */
+  /* Compact Buttons */
   .video-header button {
-    padding: 0 6px;
-    height: 28px;
-    /* Compact height */
+    padding: 0;
+    width: 32px;
+    height: 32px;
     justify-content: center;
-    min-width: 28px;
-    font-size: 0.75rem;
-  }
-
-  /* Smaller Icons inside buttons */
-  .video-header button svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* Row 1: Controls Container */
-  .controls {
-    display: flex;
-    width: 100%;
-    flex-wrap: wrap;
-    /* Allow wrapping for 2 rows */
-    align-items: center;
-    gap: 8px;
-    margin-top: 0;
-    justify-content: flex-start;
-    padding-right: 8px;
-    padding-bottom: 4px;
-  }
-
-  /* FORCE LINE BREAK */
-  .mobile-break {
-    display: block !important;
-    width: 100%;
-    height: 0;
-    order: 10;
-    /* Force break after top row buttons */
-    margin: 4px 0;
-    flex-basis: 100%;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    /* Subtle divider */
-  }
-
-  /* ORDER 1: Logo */
-  .controls>.logo {
-    order: 1;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-right: auto !important;
-    margin-left: 12px;
-    flex: 0 0 auto;
-    font-size: 1.1rem !important;
-  }
-
-  .logo span {
-    font-size: 1.2rem !important;
-  }
-
-  /* ORDER 2: Top Row Buttons (Sync, Lock, Proxy, Admin, Mic, Vol) */
-  /* We select them by excluding Logo, Input, Load */
-  .controls>button:not(.logo):not([title="Load URL"]),
-  .controls>.volume-control,
-  .main-mic-btn {
-    order: 2;
-    /* Styles for fixed width buttons from previous step */
-    flex: 0 0 auto !important;
-    /* width: 36px !important; */
-    height: 36px !important;
-    /* padding: 0 !important; */
     border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 !important;
   }
 
-  /* ORDER 20: Input Group (Row 2) */
+  .volume-control {
+    margin-left: 8px;
+  }
+
+  /* Input Group expands */
   .input-group {
-    display: flex !important;
-    /* Show it */
-    order: 20;
     flex: 1 1 auto;
-    /* Take available space */
-    width: auto !important;
-    min-width: 100px;
+    min-width: 120px;
     margin-right: 4px;
   }
 
   .input-group input {
-    height: 36px !important;
-    /* Match button height */
-    font-size: 14px !important;
+    height: 32px;
+    font-size: 14px;
   }
 
-  /* ORDER 21: Load Button (Row 2) */
-  .controls>button[title="Load URL"] {
-    order: 21;
-    flex: 0 0 auto !important;
-    width: 36px !important;
-    height: 36px !important;
-    padding: 0 !important;
-  }
-
-  /* Reset Button styles that were too broad */
-  .video-header button {
-    order: 2;
-    /* Default order if not overridden */
-  }
-
-  /* Remove text labels on mobile */
-  .btn-text {
-    display: none !important;
-  }
-
-  /* Volume - Fixed Width */
-  .volume-control {
-    order: 2;
-    /* Ensure it stays in top row */
-    flex: 0 0 auto !important;
-    width: auto !important;
-    /* Let it take necessary space */
-    min-width: auto !important;
-    /* Allow expanding */
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-    padding: 0 4px;
-    margin: 0 !important;
-    margin-left: 12px !important;
-    /* Increased space */
-  }
-
-  /* Target the inner icon container (div) to prevent shrinking */
-  .volume-control>div:first-child {
-    flex-shrink: 0 !important;
-    display: flex !important;
-  }
-
-  .volume-control input[type="range"] {
-    width: 60px !important;
-    /* Fixed small width */
-  }
-
-  /* Remove text labels on mobile */
-  .btn-text {
-    display: none !important;
-  }
-
-  /* Reset Specific Overrides */
-  .controls>button:not([title="Load URL"]) {
-    min-width: 36px;
+  /* Load button specific */
+  .header-admin>button[title="Load URL"] {
+    width: 32px;
+    height: 32px;
   }
 
   /* Chat Overlay Position */

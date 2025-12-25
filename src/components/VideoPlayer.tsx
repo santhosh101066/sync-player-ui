@@ -29,11 +29,10 @@ import {
   Volume2,
   Maximize,
   Minimize,
-  Captions,
-  Languages,
   Check,
   Lightbulb,
-  Sparkles
+  Sparkles,
+  Settings,
 } from "lucide-react";
 import { useWebSocket } from "../context/WebSocketContext";
 
@@ -101,8 +100,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Use proper INTRO_URL initialization
   const [src, setSrc] = useState<string>(INTRO_URL);
   const [isIntro, setIsIntro] = useState(true);
-  const [showAudioMenu, setShowAudioMenu] = useState(false);
-  const [showCaptionMenu, setShowCaptionMenu] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setShowSettingsMenu(false);
+      }
+    }
+
+    if (showSettingsMenu) {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("touchstart", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [showSettingsMenu]);
+  // Renamed/Removed individual states in favor of consolidated menu
+  // const [showCaptionMenu, setShowCaptionMenu] = useState(false);
+  // const [showAudioMenu, setShowAudioMenu] = useState(false);
   const [ambientMode, setAmbientMode] = useState(true);
 
   // --- Media State ---
@@ -570,100 +589,88 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 </button>
 
                 {/* Captions - Show for Admin even if empty, to debug */}
-                {(textTracks.length > 0 || isAdmin) && (
-                  <div className="relative">
-                    <button
-                      className={`control-btn caption-btn ${currentTextTrack ? 'active' : ''}`}
-                      onClick={() => setShowCaptionMenu(!showCaptionMenu)}
-                      title="Captions"
-                      style={{ opacity: textTracks.length === 0 ? 0.5 : 1 }}
-                    >
-                      <Captions strokeWidth={1.5} />
-                    </button>
-                    {showCaptionMenu && (
-                      <div className="audio-menu">
-                        <div className="audio-menu-header">Captions</div>
-                        {textTracks.length === 0 && <div className="p-2 text-xs text-zinc-500">No captions detected</div>}
+                {/* Consolidated Settings Menu (Captions + Audio) */}
+                <div className="relative">
+                  <button
+                    className={`control-btn settings-btn ${showSettingsMenu ? 'active' : ''}`}
+                    onClick={() => setShowSettingsMenu(!showSettingsMenu)}
+                    title="Settings"
+                  >
+                    <Settings strokeWidth={1.5} />
+                  </button>
 
-                        {textTracks.length > 0 && (
-                          <button
-                            className={`audio-track-item ${!currentTextTrack ? 'active' : ''}`}
-                            onClick={() => {
-                              if (playerRef.current) {
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                Array.from(playerRef.current.textTracks).forEach((t: any) => {
-                                  t.mode = 'disabled';
-                                });
-                              }
-                              setShowCaptionMenu(false);
-                            }}
-                          >
-                            <span>Off</span>
-                            {!currentTextTrack && <Check size={14} strokeWidth={1.5} />}
-                          </button>
-                        )}
+                  {showSettingsMenu && (
+                    <div className="audio-menu settings-menu">
 
-                        {textTracks.map((track) => (
-                          <button
-                            key={track.id || track.label}
-                            className={`audio-track-item ${currentTextTrack?.id === track.id ? 'active' : ''}`}
-                            onClick={() => {
-                              if (playerRef.current) {
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                Array.from(playerRef.current.textTracks).forEach((t: any) => {
-                                  t.mode = (t.id === track.id) ? 'showing' : 'disabled';
-                                });
-                              }
-                              setShowCaptionMenu(false);
-                            }}
-                          >
-                            <span>{track.label || track.language}</span>
-                            {currentTextTrack?.id === track.id && <Check size={14} strokeWidth={1.5} />}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                      {/* --- Captions Section --- */}
+                      <div className="audio-menu-header">Captions</div>
+                      {textTracks.length === 0 && <div className="p-2 text-xs text-zinc-500">No captions</div>}
 
-                {/* Audio Tracks - Show for Admin even if single track */}
-                {(audioTracks.length > 1 || isAdmin) && (
-                  <div className="relative">
-                    <button
-                      className="control-btn"
-                      onClick={() => setShowAudioMenu(!showAudioMenu)}
-                      title="Audio Tracks"
-                      style={{ opacity: audioTracks.length <= 1 ? 0.5 : 1 }}
-                    >
-                      <Languages strokeWidth={1.5} />
-                    </button>
-                    {showAudioMenu && (
-                      <div className="audio-menu">
-                        <div className="audio-menu-header">Audio</div>
-                        {audioTracks.length === 0 && <div className="p-2 text-xs text-zinc-500">No audio tracks detected</div>}
+                      {textTracks.length > 0 && (
+                        <button
+                          className={`audio-track-item ${!currentTextTrack ? 'active' : ''}`}
+                          onClick={() => {
+                            if (playerRef.current) {
+                              Array.from(playerRef.current.textTracks).forEach((t: any) => {
+                                t.mode = 'disabled';
+                              });
+                            }
+                            // Don't close immediately, let user toggle other things if needed? 
+                            // Or close for better UX. Let's keep open for now or close? 
+                            // Usually separate clicks. Let's close for simplicity.
+                            // setShowSettingsMenu(false); 
+                          }}
+                        >
+                          <span>Off</span>
+                          {!currentTextTrack && <Check size={14} strokeWidth={1.5} />}
+                        </button>
+                      )}
 
-                        {audioTracks.map((track) => (
-                          <button
-                            key={track.id || track.label}
-                            className={`audio-track-item ${currentAudioTrack?.id === track.id ? 'active' : ''}`}
-                            onClick={() => {
-                              if (playerRef.current) {
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                Array.from(playerRef.current.audioTracks).forEach((t: any) => {
-                                  if (t.id === track.id) t.selected = true;
-                                });
-                              }
-                              setShowAudioMenu(false);
-                            }}
-                          >
-                            <span>{track.label || track.language || `Track ${track.id}`}</span>
-                            {currentAudioTrack?.id === track.id && <Check size={14} strokeWidth={1.5} />}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+                      {textTracks.map((track) => (
+                        <button
+                          key={track.id || track.label}
+                          className={`audio-track-item ${currentTextTrack?.id === track.id ? 'active' : ''}`}
+                          onClick={() => {
+                            if (playerRef.current) {
+                              Array.from(playerRef.current.textTracks).forEach((t: any) => {
+                                t.mode = (t.id === track.id) ? 'showing' : 'disabled';
+                              });
+                            }
+                            setShowSettingsMenu(false);
+                          }}
+                        >
+                          <span>{track.label || track.language}</span>
+                          {currentTextTrack?.id === track.id && <Check size={14} strokeWidth={1.5} />}
+                        </button>
+                      ))}
+
+                      <div className="menu-divider"></div>
+
+                      {/* --- Audio Section --- */}
+                      <div className="audio-menu-header">Audio</div>
+                      {audioTracks.length <= 1 && <div className="p-2 text-xs text-zinc-500">Default</div>}
+
+                      {audioTracks.map((track) => (
+                        <button
+                          key={track.id || track.label}
+                          className={`audio-track-item ${currentAudioTrack?.id === track.id ? 'active' : ''}`}
+                          onClick={() => {
+                            if (playerRef.current) {
+                              Array.from(playerRef.current.audioTracks).forEach((t: any) => {
+                                if (t.id === track.id) t.selected = true;
+                              });
+                            }
+                            setShowSettingsMenu(false);
+                          }}
+                        >
+                          <span>{track.label || track.language || `Track ${track.id}`}</span>
+                          {currentAudioTrack?.id === track.id && <Check size={14} strokeWidth={1.5} />}
+                        </button>
+                      ))}
+
+                    </div>
+                  )}
+                </div>
 
                 <button
                   className={`control-btn ${ambientMode ? 'active-glow' : ''}`}

@@ -103,7 +103,7 @@ body {
   gap: 12px;
   /* Increased gap */
   flex: 1;
-  justify-content: flex-start;
+  justify-content: space-between;
   /* Default left align */
   align-items: center;
 }
@@ -208,7 +208,7 @@ button.recording {
   background: var(--danger);
   color: white;
   border-color: var(--danger);
-  animation: pulse-red 2s infinite;
+  animation: pulse-green 2s infinite;
 }
 
 /* --- Sidebar Tabs --- */
@@ -422,6 +422,20 @@ button.recording {
 @keyframes pulse-red {
   0% {
     box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+@keyframes pulse-green {
+  0% {
+    box-shadow: 0 0 0 0 rgba(68, 239, 128, 0.7);
   }
 
   70% {

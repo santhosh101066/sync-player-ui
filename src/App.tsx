@@ -246,13 +246,77 @@ const AppContent: React.FC = () => {
       {/* --- Header --- */}
       <div className="video-header">
         <div className="controls">
-          <div className="logo">
-            <span style={{ color: "var(--primary)", fontSize: "1.5rem" }}>▶</span>
-            SyncStream
+          {/* GROUP 1: Primary (Visible to everyone, always on top row on mobile) */}
+          <div className="header-primary">
+            <div className="logo">
+              <span style={{ color: "var(--primary)", fontSize: "1.5rem" }}>▶</span>
+              SyncStream
+            </div>
+
+            {/* Spacer to push controls right on desktop, or managed via flex on mobile */}
+            <div className="header-spacer"></div>
+
+            {/* Mic and Volume */}
+            <div className="primary-controls">
+              <button
+                className={`main-mic-btn ${isRecording ? "recording" : "muted"}`}
+                onClick={toggleMic}
+                title={isRecording ? "Mute Microphone" : "Unmute Microphone"}
+              >
+                {isRecording ? (
+                  <>
+                    {" "}
+                    <Mic size={18} className="pulse-anim" strokeWidth={1.5} /> <span className="btn-text">LIVE</span>{" "}
+                  </>
+                ) : (
+                  <>
+                    {" "}
+                    <MicOff size={18} strokeWidth={1.5} />{" "}
+                    <span className="btn-text">Muted</span>{" "}
+                  </>
+                )}
+              </button>
+
+              <div
+                className="volume-control"
+                style={{ gap: "10px", paddingRight: "0" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <Volume2
+                    size={18}
+                    color={volume === 0 ? "var(--danger)" : "var(--text-muted)"}
+                    strokeWidth={1.5}
+                  />
+                  <span
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "var(--text-muted)",
+                      fontWeight: 500,
+                    }}
+                    className="btn-text"
+                  >
+                    VOL
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  defaultValue="1"
+                  onChange={(e) => setVolume(parseFloat(e.target.value))}
+                  style={{
+                    width: "80px",
+                    background: `linear-gradient(to right, var(--primary) ${(volume / 2) * 100}%, var(--bg-dark) ${(volume / 2) * 100}%)`
+                  }}
+                />
+              </div>
+            </div>
           </div>
 
+          {/* GROUP 2: Admin Tools (Second row on mobile) */}
           {isAdmin && (
-            <>
+            <div className="header-admin">
               <div className="input-group">
                 <LinkIcon size={16} className="input-icon" strokeWidth={1.5} />
                 <input
@@ -266,120 +330,64 @@ const AppContent: React.FC = () => {
                 <RefreshCw size={16} strokeWidth={1.5} /> <span className="btn-text">Load</span>
               </button>
 
-              {/* Force Break on Mobile */}
-              <div className="mobile-break"></div>
+              <div className="admin-actions">
+                <button className="primary" id="syncBtn" onClick={handleSync}>
+                  <Zap size={16} strokeWidth={1.5} /> <span className="btn-text">Sync</span>
+                </button>
+                <button
+                  onClick={toggleUserControls}
+                  style={{
+                    background: userControlsAllowed
+                      ? "rgba(34, 197, 94, 0.1)"
+                      : "rgba(239, 68, 68, 0.1)",
+                    color: userControlsAllowed ? "#22c55e" : "#ef4444",
+                    borderColor: userControlsAllowed ? "#22c55e" : "#ef4444",
+                    minWidth: "40px",
+                    padding: "0 8px",
+                  }}
+                  title={
+                    userControlsAllowed
+                      ? "Lock User Controls"
+                      : "Unlock User Controls"
+                  }
+                >
+                  {userControlsAllowed ? (
+                    <Unlock size={18} strokeWidth={1.5} />
+                  ) : (
+                    <Lock size={18} strokeWidth={1.5} />
+                  )}
+                </button>
+                <button
+                  onClick={toggleProxy}
+                  style={{
+                    background: proxyEnabled
+                      ? "rgba(34, 197, 94, 0.1)"
+                      : "rgba(239, 68, 68, 0.1)",
+                    color: proxyEnabled ? "#22c55e" : "#ef4444",
+                    borderColor: proxyEnabled ? "#22c55e" : "#ef4444",
+                    minWidth: "40px",
+                    padding: "0 8px",
+                  }}
+                  title={
+                    proxyEnabled
+                      ? "Disable Stream Proxy"
+                      : "Enable Stream Proxy"
+                  }
+                >
+                  <Globe size={18} strokeWidth={1.5} />
+                  <span className="btn-text">{proxyEnabled ? " ON" : " OFF"}</span>
+                </button>
 
-              <button className="primary" id="syncBtn" onClick={handleSync}>
-                <Zap size={16} strokeWidth={1.5} /> <span className="btn-text">Sync</span>
-              </button>
-              <button
-                onClick={toggleUserControls}
-                style={{
-                  background: userControlsAllowed
-                    ? "rgba(34, 197, 94, 0.1)"
-                    : "rgba(239, 68, 68, 0.1)",
-                  color: userControlsAllowed ? "#22c55e" : "#ef4444",
-                  borderColor: userControlsAllowed ? "#22c55e" : "#ef4444",
-                  minWidth: "40px",
-                  padding: "0 8px",
-                }}
-                title={
-                  userControlsAllowed
-                    ? "Lock User Controls"
-                    : "Unlock User Controls"
-                }
-              >
-                {userControlsAllowed ? (
-                  <Unlock size={18} strokeWidth={1.5} />
-                ) : (
-                  <Lock size={18} strokeWidth={1.5} />
-                )}
-              </button>
-              <button
-                onClick={toggleProxy}
-                style={{
-                  background: proxyEnabled
-                    ? "rgba(34, 197, 94, 0.1)"
-                    : "rgba(239, 68, 68, 0.1)",
-                  color: proxyEnabled ? "#22c55e" : "#ef4444",
-                  borderColor: proxyEnabled ? "#22c55e" : "#ef4444",
-                  minWidth: "40px",
-                  padding: "0 8px",
-                }}
-                title={
-                  proxyEnabled
-                    ? "Disable Stream Proxy"
-                    : "Enable Stream Proxy"
-                }
-              >
-                <Globe size={18} strokeWidth={1.5} />
-                <span className="btn-text">{proxyEnabled ? " ON" : " OFF"}</span>
-              </button>
-
-              <button
-                onClick={() => setShowAdminDashboard(true)}
-                className="btn-primary-outline"
-                title="Admin Dashboard"
-              >
-                <Shield size={16} strokeWidth={1.5} />
-              </button>
-            </>
-          )}
-
-          {/* Mic Button */}
-          <button
-            className={`main-mic-btn ${isRecording ? "recording" : "muted"}`}
-            onClick={toggleMic}
-            title={isRecording ? "Mute Microphone" : "Unmute Microphone"}
-          >
-            {isRecording ? (
-              <>
-                {" "}
-                <Mic size={18} className="pulse-anim" strokeWidth={1.5} /> <span className="btn-text">LIVE</span>{" "}
-              </>
-            ) : (
-              <>
-                {" "}
-                <MicOff size={18} strokeWidth={1.5} />{" "}
-                <span className="btn-text">Muted</span>{" "}
-              </>
-            )}
-          </button>
-
-          {/* Volume Control */}
-          <div
-            className="volume-control"
-            style={{ gap: "10px", paddingRight: "16px" }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <Volume2
-                size={18}
-                color={volume === 0 ? "var(--danger)" : "var(--text-muted)"}
-                strokeWidth={1.5}
-              />
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  color: "var(--text-muted)",
-                  fontWeight: 500,
-                }}
-              >
-                VOL
-              </span>
+                <button
+                  onClick={() => setShowAdminDashboard(true)}
+                  className="btn-primary-outline"
+                  title="Admin Dashboard"
+                >
+                  <Shield size={16} strokeWidth={1.5} />
+                </button>
+              </div>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="2"
-              step="0.1"
-              defaultValue="1"
-              onChange={(e) => setVolume(parseFloat(e.target.value))}
-              style={{
-                width: "80px",
-                background: `linear-gradient(to right, var(--primary) ${(volume / 2) * 100}%, var(--bg-dark) ${(volume / 2) * 100}%)`
-              }}
-            />
-          </div>
+          )}
         </div>
       </div>
 
