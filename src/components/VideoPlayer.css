@@ -1,0 +1,703 @@
+/* VideoPlayer.css */
+
+/* =========================================
+   ROOT & LAYOUT
+   ========================================= */
+
+/* Vidstack Media Player specific */
+/* Vidstack Media Player specific */
+.media-player {
+    width: 100% !important;
+    height: 100% !important;
+    aspect-ratio: auto !important;
+    display: block;
+    background: transparent;
+    /* Allow ambient light to show through */
+}
+
+.video-player-root {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background-color: #000;
+    /* Fallback */
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    /* Keep canvas inside */
+}
+
+/* When Ambient Mode is active, make root transparent */
+.video-player-root:has(.ambient-canvas.active) {
+    background-color: transparent;
+}
+
+/* Ambient Canvas */
+.ambient-canvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    /* Behind player (DOM order: canvas first) */
+    filter: blur(80px) saturate(1.5) brightness(0.8);
+    opacity: 0;
+    transition: opacity 1s ease;
+    pointer-events: none;
+}
+
+.ambient-canvas.active {
+    opacity: 0.6;
+}
+
+/* Helper for glow button */
+.active-glow {
+    color: #facc15 !important;
+    /* Yellow-400 */
+    text-shadow: 0 0 10px rgba(250, 204, 21, 0.5);
+}
+
+/* Locked Mode - Disable interactions for non-admins */
+/* Locked Mode styles removed from here, handled in JSX now */
+
+.video-player-root.locked-mode .gestures-layer {
+    pointer-events: none !important;
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* or cover depending on preference */
+}
+
+/* =========================================
+   LAYERS & OVERLAYS
+   ========================================= */
+
+/* Generic Layer Positioning */
+.layer-full {
+    position: absolute;
+    inset: 0;
+    /* top/left/right/bottom: 0 */
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 10;
+}
+
+/* Gestures Layer (needs pointer events) */
+.gestures-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Custom Overlays (Chat, Speakers) */
+.overlays-layer {
+    z-index: 20;
+}
+
+/* --- Chat --- */
+/* --- Chat --- */
+.vp-chat-container {
+    position: absolute;
+    bottom: 80px;
+    /* Adjusted bottom */
+    right: 20px;
+    width: 280px;
+    max-width: 70%;
+    max-height: 60%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: flex-end;
+    gap: 8px;
+    mask-image: linear-gradient(to bottom, transparent, black 15%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 15%);
+    pointer-events: none;
+}
+
+.vp-chat-bubble {
+    background: rgba(20, 20, 20, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 6px 12px;
+    border-radius: 12px 12px 2px 12px;
+    color: #e5e5e5;
+    font-size: 0.85rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    animation: slideInRight 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    max-width: 100%;
+    word-wrap: break-word;
+}
+
+.vp-chat-nick {
+    font-weight: 600;
+    font-size: 0.75em;
+    margin-right: 6px;
+    text-transform: uppercase;
+    opacity: 0.9;
+}
+
+.vp-chat-text {
+    color: white;
+}
+
+/* --- Speakers --- */
+.speaker-list {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.speaker-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(34, 197, 94, 0.15);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    padding: 4px 10px 4px 4px;
+    border-radius: 999px;
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 500;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    animation: fadeIn 0.3s ease;
+}
+
+.speaker-icon-circle {
+    width: 24px;
+    height: 24px;
+    background: #22c55e;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.4);
+}
+
+/* --- Lock Indicator --- */
+.lock-indicator {
+    position: absolute;
+    top: 24px;
+    left: 24px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* =========================================
+   CONTROLS BAR
+   ========================================= */
+
+.controls-layer {
+    position: absolute;
+    inset: 0;
+    /* Ensures it covers full player */
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    /* Push to bottom */
+    pointer-events: none;
+    /* Let clicks pass */
+    transition: opacity 0.3s ease;
+}
+
+/* Fade out when not interacting */
+.video-player-root:not(:hover) .controls-layer:not(:focus-within) {
+    opacity: 0;
+}
+
+/* Gradient Background for readability */
+.controls-gradient {
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.5) 50%, transparent 100%);
+    width: 100%;
+    padding: 0 24px 20px 24px;
+    /* Bottom padding */
+    pointer-events: auto;
+    /* Enable clicks */
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+/* --- Time Slider --- */
+.time-slider {
+    width: 100%;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    position: relative;
+    margin-bottom: 4px;
+    pointer-events: auto;
+}
+
+.time-slider-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    position: relative;
+    /* Ensure fill and progress are relative to this */
+}
+
+.time-slider:hover .time-slider-track {
+    height: 6px;
+}
+
+/* Force Purple Fill - Critical */
+.time-slider-fill {
+    background-color: var(--primary, #a855f7) !important;
+    height: 100%;
+    border-radius: 2px;
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 2;
+    /* Above buffer */
+    opacity: 1 !important;
+    width: var(--slider-fill, 0%) !important;
+    /* Ensure Vidstack updates this */
+}
+
+/* Buffer */
+.time-slider-progress {
+    background-color: rgba(255, 255, 255, 0.5) !important;
+    height: 100%;
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-radius: 2px;
+    z-index: 1;
+    /* Above track, below fill */
+    width: var(--slider-progress, 0%) !important;
+}
+
+.time-slider-thumb {
+    position: absolute;
+    left: var(--slider-fill);
+    /* Vidstack injection */
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    /* Larger thumb */
+    height: 14px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.1s;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    z-index: 3;
+    opacity: 1;
+    /* Always visible */
+}
+
+.time-slider:hover .time-slider-thumb {
+    transform: translate(-50%, -50%) scale(1.2);
+}
+
+
+/* --- Buttons Row --- */
+.buttons-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.control-btn {
+    background: transparent;
+    border: none;
+    color: #e4e4e7;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.control-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    transform: scale(1.05);
+}
+
+.control-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    /* Lucide icons are strokes */
+    stroke: currentColor;
+}
+
+/* Play button */
+.play-btn {
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.play-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
+.play-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: white;
+    stroke: white;
+}
+
+/* --- Volume --- */
+.volume-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Always visible Volume Slider (No hover expand) */
+.volume-slider-container {
+    width: 80px;
+    /* Static width */
+    height: 32px;
+    display: flex;
+    align-items: center;
+    opacity: 1;
+    position: relative;
+    /* Fix layout issues */
+    outline: none !important;
+    /* Remove focus ring */
+}
+
+.volume-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    position: relative;
+    cursor: pointer;
+}
+
+.volume-fill {
+    background: white;
+    height: 100%;
+    border-radius: 2px;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--slider-fill, 0%);
+    /* Vidstack updates this */
+}
+
+.volume-thumb {
+    position: absolute;
+    left: var(--slider-fill);
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    pointer-events: none;
+    /* Let clicks pass to track */
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    perspective: 1000px;
+    z-index: 10;
+}
+
+/* --- Mic Button --- */
+/* Base neutral state */
+.mic-btn {
+    /* Inherits control-btn size/style */
+    transition: all 0.3s ease;
+}
+
+/* Active/Recording State - Solid Red for clear visibility */
+.mic-btn.recording {
+    background-color: #ef4444;
+    /* Solid Red */
+    color: white;
+    border: none;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.5);
+    /* Glow */
+    animation: none;
+    /* Removed pulse to fix 'odd' look */
+}
+
+.mic-btn.recording:hover {
+    background-color: #dc2626;
+    /* Darker red on hover */
+    transform: scale(1.05);
+}
+
+/* --- Audio Menu --- */
+.relative {
+    position: relative;
+}
+
+.audio-menu {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    width: 200px;
+    background: rgba(15, 15, 15, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    margin-bottom: 8px;
+    overflow: hidden;
+    animation: fadeIn 0.2s ease;
+}
+
+.audio-menu-header {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #a1a1aa;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 4px;
+}
+
+.audio-track-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    color: #e4e4e7;
+    font-size: 0.9rem;
+    font-family: inherit;
+    text-align: left;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.audio-track-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.audio-track-item.active {
+    background: rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+    font-weight: 600;
+}
+
+/* --- Time Display --- */
+.time-display {
+    display: flex;
+    gap: 4px;
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: #d4d4d8;
+    pointer-events: none;
+    margin-left: 8px;
+}
+
+.time-divider {
+    opacity: 0.5;
+}
+
+/* =========================================
+   ANIMATIONS
+   ========================================= */
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse-red {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    }
+
+    70% {
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+}
+
+/* Audio Wave */
+.wave-bar {
+    width: 2px;
+    background-color: white;
+    border-radius: 1px;
+    animation: wave 1s infinite ease-in-out;
+}
+
+@keyframes wave {
+
+    0%,
+    100% {
+        height: 40%;
+    }
+
+    50% {
+        height: 100%;
+    }
+}
+
+/* Utilities */
+.hidden {
+    display: none !important;
+}
+
+/* Mobile Tweaks */
+@media (max-width: 900px) {
+    .video-player-root {
+        min-height: 200px;
+        /* Reduced min-height */
+        border-radius: 0 !important;
+    }
+
+    /* Compact Controls Gradient */
+    .controls-gradient {
+        padding: 0 12px 10px 12px;
+        /* Tighter padding */
+        gap: 6px;
+    }
+
+    /* Thinner Time Slider */
+    .time-slider {
+        height: 12px;
+        /* Smaller hit area */
+        margin-bottom: 2px;
+    }
+
+    .time-slider-track {
+        height: 3px;
+        /* Thin track */
+    }
+
+    .time-slider:hover .time-slider-track {
+        height: 4px;
+    }
+
+    .time-slider-thumb {
+        width: 10px;
+        height: 10px;
+    }
+
+    /* Compact Buttons Row */
+    .buttons-row {
+        margin-top: 2px;
+    }
+
+    .control-group {
+        gap: 8px;
+        /* Reduced gap */
+    }
+
+    /* Smaller Buttons */
+    .control-btn {
+        width: 28px;
+        height: 28px;
+    }
+
+    .control-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* Smaller Play Button */
+    .play-btn {
+        width: 32px;
+        /* Smaller play circle */
+        height: 32px;
+    }
+
+    .play-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* Compact Volume */
+    .volume-slider-container {
+        width: 60px;
+        /* Shorter slider */
+        height: 28px;
+    }
+
+    /* Smaller Time Text */
+    .time-display {
+        font-size: 0.75rem;
+        margin-left: 4px;
+        gap: 2px;
+    }
+
+    /* Move Chat Overlay up a bit */
+    .vp-chat-container {
+        bottom: 60px;
+    }
+}

@@ -23,7 +23,7 @@ import {
   Globe,
 } from "lucide-react";
 import "./App.css";
-import type { ServerMessage } from "./types/types";
+
 
 // Define a type guard for messages that might contain URLs
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,7 +65,6 @@ const AppContent: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"chat" | "library" | "users">(
     "chat"
   );
-  const [processedMsg, setProcessedMsg] = useState<ServerMessage | null>(null);
 
   // 4. Form Inputs
   const [nameInput, setNameInput] = useState("");
@@ -84,18 +83,17 @@ const AppContent: React.FC = () => {
   }, [isConnected, adminPassword, send]);
 
   // --- Effect: Sync Input Box with Actual Playing Video ---
-  if (lastMessage && lastMessage !== processedMsg) {
-    setProcessedMsg(lastMessage); // Mark as processed
+  useEffect(() => {
+    if (!lastMessage || !msgHasUrl(lastMessage)) return;
 
-    // Check if this message has a URL and if it's DIFFERENT from current input
-    if (
-      msgHasUrl(lastMessage) &&
-      lastMessage.url &&
-      lastMessage.url !== urlInput
-    ) {
-      setUrlInput(lastMessage.url);
+    // Update input if the server says we are playing a different URL
+    if (lastMessage.url && lastMessage.url !== urlInput) {
+      // Ignore intro URL updates in the input box to keep it clean
+      if (!lastMessage.url.includes("/intro.mp4")) {
+        setUrlInput(lastMessage.url);
+      }
     }
-  }
+  }, [lastMessage, urlInput]);
 
   // --- Actions ---
   const handleJoin = useCallback(() => {
@@ -238,7 +236,7 @@ const AppContent: React.FC = () => {
 
       {audioBlocked && (
         <div className="audio-blocked-toast" onClick={() => initAudio()}>
-          <VolumeX size={20} />
+          <VolumeX size={20} strokeWidth={1.5} />
           <span style={{ fontWeight: 600 }}>
             Audio is blocked! Click here to listen.
           </span>
@@ -247,16 +245,16 @@ const AppContent: React.FC = () => {
 
       {/* --- Header --- */}
       <div className="video-header">
-        <div className="logo">
-          <span style={{ color: "var(--primary)", fontSize: "1.5rem" }}>▶</span>
-          SyncStream
-        </div>
-
         <div className="controls">
+          <div className="logo">
+            <span style={{ color: "var(--primary)", fontSize: "1.5rem" }}>▶</span>
+            SyncStream
+          </div>
+
           {isAdmin && (
             <>
               <div className="input-group">
-                <LinkIcon size={16} className="input-icon" />
+                <LinkIcon size={16} className="input-icon" strokeWidth={1.5} />
                 <input
                   type="text"
                   placeholder="Stream URL..."
@@ -265,10 +263,14 @@ const AppContent: React.FC = () => {
                 />
               </div>
               <button onClick={handleManualLoad} title="Load URL">
-                <RefreshCw size={16} /> Load
+                <RefreshCw size={16} strokeWidth={1.5} /> <span className="btn-text">Load</span>
               </button>
+
+              {/* Force Break on Mobile */}
+              <div className="mobile-break"></div>
+
               <button className="primary" id="syncBtn" onClick={handleSync}>
-                <Zap size={16} /> Sync
+                <Zap size={16} strokeWidth={1.5} /> <span className="btn-text">Sync</span>
               </button>
               <button
                 onClick={toggleUserControls}
@@ -288,9 +290,9 @@ const AppContent: React.FC = () => {
                 }
               >
                 {userControlsAllowed ? (
-                  <Unlock size={18} />
+                  <Unlock size={18} strokeWidth={1.5} />
                 ) : (
-                  <Lock size={18} />
+                  <Lock size={18} strokeWidth={1.5} />
                 )}
               </button>
               <button
@@ -310,36 +312,36 @@ const AppContent: React.FC = () => {
                     : "Enable Stream Proxy"
                 }
               >
-                <Globe size={18} />
-                {proxyEnabled ? " ON" : " OFF"}
+                <Globe size={18} strokeWidth={1.5} />
+                <span className="btn-text">{proxyEnabled ? " ON" : " OFF"}</span>
+              </button>
+
+              <button
+                onClick={() => setShowAdminDashboard(true)}
+                className="btn-primary-outline"
+                title="Admin Dashboard"
+              >
+                <Shield size={16} strokeWidth={1.5} />
               </button>
             </>
           )}
 
           {/* Mic Button */}
           <button
-            className={isRecording ? "recording" : ""}
+            className={`main-mic-btn ${isRecording ? "recording" : "muted"}`}
             onClick={toggleMic}
             title={isRecording ? "Mute Microphone" : "Unmute Microphone"}
-            style={{
-              minWidth: "110px",
-              background: isRecording ? "var(--danger)" : "var(--bg-element)",
-              borderColor: isRecording
-                ? "var(--danger)"
-                : "rgba(255,255,255,0.1)",
-              color: "white",
-            }}
           >
             {isRecording ? (
               <>
                 {" "}
-                <Mic size={18} className="pulse-anim" /> <span>LIVE</span>{" "}
+                <Mic size={18} className="pulse-anim" strokeWidth={1.5} /> <span className="btn-text">LIVE</span>{" "}
               </>
             ) : (
               <>
                 {" "}
-                <MicOff size={18} />{" "}
-                <span style={{ color: "var(--text-muted)" }}>Muted</span>{" "}
+                <MicOff size={18} strokeWidth={1.5} />{" "}
+                <span className="btn-text">Muted</span>{" "}
               </>
             )}
           </button>
@@ -353,6 +355,7 @@ const AppContent: React.FC = () => {
               <Volume2
                 size={18}
                 color={volume === 0 ? "var(--danger)" : "var(--text-muted)"}
+                strokeWidth={1.5}
               />
               <span
                 style={{
@@ -371,19 +374,12 @@ const AppContent: React.FC = () => {
               step="0.1"
               defaultValue="1"
               onChange={(e) => setVolume(parseFloat(e.target.value))}
-              style={{ width: "80px" }}
+              style={{
+                width: "80px",
+                background: `linear-gradient(to right, var(--primary) ${(volume / 2) * 100}%, var(--bg-dark) ${(volume / 2) * 100}%)`
+              }}
             />
           </div>
-
-          {isAdmin && (
-            <button
-              onClick={() => setShowAdminDashboard(true)}
-              style={{ color: "var(--primary)", borderColor: "var(--primary)" }}
-              title="Admin Dashboard"
-            >
-              <Shield size={16} />
-            </button>
-          )}
         </div>
       </div>
 
@@ -436,21 +432,21 @@ const AppContent: React.FC = () => {
               className={`tab-btn ${activeTab === "chat" ? "active" : ""}`}
               onClick={() => setActiveTab("chat")}
             >
-              <MessageSquare size={18} /> Chat
+              <MessageSquare size={18} strokeWidth={1.5} /> Chat
             </button>
             {isAdmin && (
               <button
                 className={`tab-btn ${activeTab === "library" ? "active" : ""}`}
                 onClick={() => setActiveTab("library")}
               >
-                <FolderOpen size={18} /> Library
+                <FolderOpen size={18} strokeWidth={1.5} /> Library
               </button>
             )}
             <button
               className={`tab-btn ${activeTab === "users" ? "active" : ""}`}
               onClick={() => setActiveTab("users")}
             >
-              <Users size={18} /> Users
+              <Users size={18} strokeWidth={1.5} /> Users
             </button>
           </div>
 

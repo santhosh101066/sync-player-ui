@@ -2,6 +2,42 @@
    CUSTOM COMPONENT STYLES
    ========================================= */
 
+/* Break element for mobile wrapping */
+.mobile-break {
+  display: none;
+}
+
+/* --- Main Header Mic Button --- */
+.main-mic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  height: 36px;
+  min-width: 110px;
+  /* Desktop width */
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: white;
+}
+
+.main-mic-btn.muted {
+  background: var(--danger, #ef4444);
+  border: 1px solid var(--danger, #ef4444);
+}
+
+.main-mic-btn.recording {
+  background: #22c55e;
+  /* Green */
+  border: 1px solid #22c55e;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+  /* Green Glow */
+}
+
 /* --- Fullscreen Mic Button (Floating) --- */
 .vjs-fs-mic-control {
   position: absolute;
@@ -72,120 +108,227 @@
     display: contents;
   }
 
-  /* 3. ORDER 1: Video Player (Top) */
+  /* 3. ORDER 2: Video Player (Middle) */
   .main-content {
-    order: 1;
+    order: 2;
     width: 100%;
     flex: 0 0 auto;
     background: #000;
     z-index: 10;
   }
 
-  /* 4. ORDER 2: Header & Controls (Middle) */
+  /* 4. ORDER 1: Header & Controls (Top) */
   .video-header {
-    order: 2;
+    order: 1;
     height: auto;
     min-height: auto;
-    padding: 8px;
+    padding: 12px 4px 4px 4px;
+    /* Reduced padding */
     background: var(--bg-panel, #18181b);
     border-bottom: 1px solid var(--border, #3f3f46);
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    /* Reduced gap */
     z-index: 9;
+    flex-wrap: wrap;
   }
 
   /* 5. ORDER 3: Sidebar/Chat (Bottom - Fills Space) */
   .sidebar {
     order: 3;
     width: 100% !important;
-    flex: 1;
     border-left: none;
     min-height: 0;
+    flex: 1;
   }
 
   /* --- Mobile UI Tweaks --- */
 
-  .logo {
-    display: none;
+  /* Logo adjustments */
+  .logo span {
+    font-size: 1.0rem !important;
+    /* Smaller icon */
   }
 
-  /* Row 1: Input Group + Load Button */
-  /* We use a flex container for the input group to sit nicely with the load button if possible,
-     but since they are siblings in .controls, we can use Grid on .controls directly. */
+  /* HIDE BUTTON TEXT on Mobile (Icon Only) */
+  .btn-text,
+  .volume-control span,
+  .mic-btn span {
+    display: none !important;
+  }
 
+  /* Reset Mic Button size for mobile */
+  .main-mic-btn {
+    min-width: 28px !important;
+    /* Smaller width */
+    width: 28px !important;
+    height: 28px !important;
+    /* Smaller height */
+    padding: 0 !important;
+  }
+
+  /* Adjust Volume Control for mobile */
+  .volume-control input[type="range"] {
+    width: 100%;
+    min-width: 50px;
+    height: 4px;
+    /* Thinner slider */
+  }
+
+  /* Make buttons smaller/square-ish */
+  .video-header button {
+    padding: 0 6px;
+    height: 28px;
+    /* Compact height */
+    justify-content: center;
+    min-width: 28px;
+    font-size: 0.75rem;
+  }
+
+  /* Smaller Icons inside buttons */
+  .video-header button svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Row 1: Controls Container */
   .controls {
     display: flex;
+    width: 100%;
     flex-wrap: wrap;
+    /* Allow wrapping for 2 rows */
     align-items: center;
-    justify-content: space-between;
+    gap: 8px;
+    margin-top: 0;
+    justify-content: flex-start;
+    padding-right: 8px;
+    padding-bottom: 4px;
   }
 
-  /* Row 1: Input (Grow) + Load (Fixed) */
-  .input-group {
-    flex: 1 1 calc(100% - 80px);
-    /* Leave space for Load button */
-    min-width: 200px;
+  /* FORCE LINE BREAK */
+  .mobile-break {
+    display: block !important;
+    width: 100%;
+    height: 0;
+    order: 10;
+    /* Force break after top row buttons */
+    margin: 4px 0;
+    flex-basis: 100%;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    /* Subtle divider */
+  }
+
+  /* ORDER 1: Logo */
+  .controls>.logo {
     order: 1;
-  }
-
-  .video-header .input-group input[type="text"] {
-    width: 100%;
-    height: 36px;
-    font-size: 0.85rem;
-  }
-
-  .controls>button[title="Load URL"] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: auto !important;
+    margin-left: 12px;
     flex: 0 0 auto;
-    width: auto;
-    min-width: 70px;
+    font-size: 1.1rem !important;
+  }
+
+  .logo span {
+    font-size: 1.2rem !important;
+  }
+
+  /* ORDER 2: Top Row Buttons (Sync, Lock, Proxy, Admin, Mic, Vol) */
+  /* We select them by excluding Logo, Input, Load */
+  .controls>button:not(.logo):not([title="Load URL"]),
+  .controls>.volume-control,
+  .main-mic-btn {
     order: 2;
-    margin-left: 8px;
-  }
-
-  /* Force a line break after Load button */
-  .controls::after {
-    content: "";
-    width: 100%;
-    order: 3;
-  }
-
-  /* Row 2: Everything else */
-  .controls>button:not([title="Load URL"]),
-  .volume-control {
-    order: 4;
-    flex: 1;
-    /* Distribute space evenly */
-    min-width: 40px;
-    /* Don't get too small */
-    margin-top: 8px;
-  }
-
-  /* Specific tweaks */
-  .volume-control {
-    display: flex !important;
-    width: auto !important;
-    padding: 0 8px;
-    background: transparent;
-    border: none;
-    flex: 1 1 auto;
-    /* Allow growing */
+    /* Styles for fixed width buttons from previous step */
+    flex: 0 0 auto !important;
+    /* width: 36px !important; */
+    height: 36px !important;
+    /* padding: 0 !important; */
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
     justify-content: center;
+    margin: 0 !important;
+  }
+
+  /* ORDER 20: Input Group (Row 2) */
+  .input-group {
+    display: flex !important;
+    /* Show it */
+    order: 20;
+    flex: 1 1 auto;
+    /* Take available space */
+    width: auto !important;
+    min-width: 100px;
+    margin-right: 4px;
+  }
+
+  .input-group input {
+    height: 36px !important;
+    /* Match button height */
+    font-size: 14px !important;
+  }
+
+  /* ORDER 21: Load Button (Row 2) */
+  .controls>button[title="Load URL"] {
+    order: 21;
+    flex: 0 0 auto !important;
+    width: 36px !important;
+    height: 36px !important;
+    padding: 0 !important;
+  }
+
+  /* Reset Button styles that were too broad */
+  .video-header button {
+    order: 2;
+    /* Default order if not overridden */
+  }
+
+  /* Remove text labels on mobile */
+  .btn-text {
+    display: none !important;
+  }
+
+  /* Volume - Fixed Width */
+  .volume-control {
+    order: 2;
+    /* Ensure it stays in top row */
+    flex: 0 0 auto !important;
+    width: auto !important;
+    /* Let it take necessary space */
+    min-width: auto !important;
+    /* Allow expanding */
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 0 4px;
+    margin: 0 !important;
+    margin-left: 12px !important;
+    /* Increased space */
+  }
+
+  /* Target the inner icon container (div) to prevent shrinking */
+  .volume-control>div:first-child {
+    flex-shrink: 0 !important;
+    display: flex !important;
   }
 
   .volume-control input[type="range"] {
-    width: 100%;
-    min-width: 60px;
+    width: 60px !important;
+    /* Fixed small width */
   }
 
-  .volume-control span {
-    display: none;
+  /* Remove text labels on mobile */
+  .btn-text {
+    display: none !important;
   }
 
-  .video-header button {
-    height: 36px;
-    padding: 0 8px;
-    font-size: 0.8rem;
+  /* Reset Specific Overrides */
+  .controls>button:not([title="Load URL"]) {
+    min-width: 36px;
   }
 
   /* Chat Overlay Position */
@@ -203,5 +346,71 @@
   .tab-btn {
     padding: 12px 0;
     font-size: 0.9rem;
+  }
+}
+
+/* =========================================
+   VOLUME SLIDER CUSTOM STYLES
+   ========================================= */
+.volume-control input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  /* Inline style handles gradient */
+  height: 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  outline: none;
+}
+
+/* Thumb Styling */
+.volume-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  margin-top: -4px;
+  /* Center on track (6px track, 14px thumb -> (6-14)/2 = -4) */
+  transition: transform 0.1s ease;
+}
+
+.volume-control input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease;
+}
+
+.volume-control input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+
+/* Track Styling (Webkit only, others use background on input) */
+.volume-control input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  border-radius: 3px;
+  /* Background handled by inline style on input */
+}
+
+/* Mobile Styling Update */
+@media (max-width: 900px) {
+  .volume-control input[type="range"] {
+    height: 8px !important;
+    /* Slightly taller for touch */
+  }
+
+  .volume-control input[type="range"]::-webkit-slider-thumb {
+    /* width: 16px !important; */
+    height: 16px !important;
+    margin-top: -4px !important;
+    /* (8-16)/2 = -4 */
   }
 }

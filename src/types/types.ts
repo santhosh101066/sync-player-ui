@@ -17,6 +17,7 @@ export type ClientMessage =
     | { type: 'mute-user'; targetId: number }
     | { type: 'kick-user'; targetId: number }
     | { type: 'toggle-proxy'; value: boolean }
+    | { type: 'get-users' }
     | { type: 'ping' } | { type: 'pong' };
 
 // --- Messages received FROM Server BY Client ---

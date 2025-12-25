@@ -2,193 +2,46 @@
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
-  useMemo,
   useRef,
   useState,
+  useLayoutEffect,
 } from "react";
-import { createPortal } from "react-dom";
-import videojs from "video.js";
-import "video.js/dist/video-js.css";
-import "@videojs/themes/dist/fantasy/index.css";
-import "videojs-contrib-quality-levels";
-import { Mic, MicOff } from "lucide-react";
+import {
+  MediaPlayer,
+  MediaProvider,
+  TimeSlider,
+  VolumeSlider,
+  Controls,
+  Gesture,
+  Time,
+  useMediaState,
+  useMediaRemote,
+  type MediaPlayerInstance,
+} from "@vidstack/react";
+import {
+  Mic,
+  MicOff,
+  Lock,
+  Play,
+  Pause,
+  VolumeX,
+  Volume1,
+  Volume2,
+  Maximize,
+  Minimize,
+  Captions,
+  Languages,
+  Check,
+  Lightbulb,
+  Sparkles
+} from "lucide-react";
 import { useWebSocket } from "../context/WebSocketContext";
-import type { ServerMessage } from "../types/types";
 
-// --- Custom Video.js Quality Components ---
+// Import styles
+import "@vidstack/react/player/styles/base.css";
+import "./VideoPlayer.css";
 
-const MenuItem = videojs.getComponent("MenuItem");
-const MenuButton = videojs.getComponent("MenuButton");
-
-interface QualityLevel {
-  id: string;
-  label: string;
-  width?: number;
-  height?: number;
-  bitrate?: number;
-  enabled: boolean;
-}
-
-interface QualityLevelsPlugin {
-  [index: number]: QualityLevel;
-  length: number;
-  on: (event: string, callback: () => void) => void;
-  off: (event: string, callback: () => void) => void;
-  trigger: (event: string) => void;
-}
-
-// Augment the Player interface (locally if global augmentation is hard in this context)
-// or just cast player to any as we've been doing, but cleaner.
-
-class QualityMenuItem extends MenuItem {
-  qualityLevel: QualityLevel | null;
-  plugin: QualityLevelsPlugin;
-
-  constructor(player: any, options: any) {
-    const { qualityLevel, plugin, label, ...rest } = options;
-    super(player, {
-      label,
-      selectable: true,
-      selected: qualityLevel ? qualityLevel.enabled : false,
-      ...rest,
-    });
-    this.qualityLevel = qualityLevel;
-    this.plugin = plugin;
-
-    // Listen for changes to keep 'selected' state in sync
-    // 'on' in VJS Component can take (target, type, listener)
-    // @ts-ignore
-    this.on(plugin, "change", this.updateSelectionState);
-  }
-
-  dispose() {
-    // @ts-ignore
-    this.off(this.plugin, "change", this.updateSelectionState);
-    super.dispose();
-  }
-
-  updateSelectionState = () => {
-    // If this is the "Auto" item, check if all levels are enabled?
-    // Or just rely on the click handler. 
-    // For specific levels:
-    if (this.qualityLevel) {
-      // @ts-ignore: MenuItem has selected()
-      this.selected(this.qualityLevel.enabled);
-    }
-  };
-
-  handleClick(event: any) {
-    // @ts-ignore
-    super.handleClick(event);
-
-    const levels = this.plugin;
-
-    // "Auto" logic: Enable all levels
-    if (!this.qualityLevel) {
-      for (let i = 0; i < levels.length; i++) {
-        levels[i].enabled = true;
-      }
-    } else {
-      // Specific Level logic: Disable all others, enable this one
-      for (let i = 0; i < levels.length; i++) {
-        const lvl = levels[i];
-        lvl.enabled = lvl.height === this.qualityLevel.height;
-      }
-    }
-  }
-}
-
-class QualityMenuButton extends MenuButton {
-  constructor(player: any, options: any) {
-    super(player, options);
-    this.updateVisibility();
-
-    // Refresh menu when levels are added/removed
-    const qualityLevels = (player as any).qualityLevels ? (player as any).qualityLevels() : null;
-    if (qualityLevels) {
-      player.on(qualityLevels, "addqualitylevel", this.update.bind(this));
-      player.on(qualityLevels, "removequalitylevel", this.update.bind(this));
-      player.on(qualityLevels, "change", this.update.bind(this));
-    }
-  }
-
-  createItems() {
-    const player = this.player();
-    const levels = (player as any).qualityLevels ? (player as any).qualityLevels() : null;
-    const items = [];
-
-    if (!levels || levels.length === 0) return [];
-
-    // 1. "Auto" Option
-    // If all levels are enabled, Auto is selected
-    let isAuto = true;
-    for (let i = 0; i < levels.length; i++) {
-      if (!levels[i].enabled) {
-        isAuto = false;
-        break;
-      }
-    }
-
-    items.push(new QualityMenuItem(player, {
-      plugin: levels,
-      qualityLevel: null, // Null implies "Auto"
-      label: "Auto",
-      selected: isAuto
-    }));
-
-    // 2. Individual Levels
-    // We filter duplicates based on height (resolution)
-    const seenHeights = new Set();
-    // Items are usually added lowest to highest, let's reverse for the menu (Highest on top)
-    for (let i = levels.length - 1; i >= 0; i--) {
-      const level = levels[i];
-      if (seenHeights.has(level.height)) continue;
-
-      seenHeights.add(level.height);
-      items.push(new QualityMenuItem(player, {
-        plugin: levels,
-        qualityLevel: level,
-        label: `${level.height}p`,
-        selected: level.enabled && !isAuto // Only show selected if NOT in Auto mode
-      }));
-    }
-
-    return items;
-  }
-
-  updateVisibility() {
-    const player = this.player();
-    const levels = (player as any).qualityLevels ? (player as any).qualityLevels() : null;
-    // Hide if no levels or only 1 level (no choice needed)
-    if (!levels || levels.length < 2) {
-      this.hide();
-    } else {
-      this.show();
-    }
-  }
-
-  update() {
-    // @ts-ignore
-    super.update();
-    this.updateVisibility();
-  }
-
-  buildCSSClass() {
-    return `vjs-quality-selector ${super.buildCSSClass()}`;
-  }
-}
-
-// Register the component
-videojs.registerComponent("QualityMenuButton", QualityMenuButton);
-
-
-interface PlayVideoDetail {
-  url: string;
-  autoPlay: boolean; // New flag
-}
-
-// Extend Video.js options if needed
+// Interface Definitions
 interface VideoPlayerProps {
   activeSpeakers: string[];
   isRecording: boolean;
@@ -202,19 +55,11 @@ interface FloatingMessage {
   color: string;
 }
 
+// Helpers
 const getAvatarColor = (name: string) => {
   const colors = [
-    "#f87171",
-    "#fb923c",
-    "#fbbf24",
-    "#a3e635",
-    "#34d399",
-    "#22d3ee",
-    "#818cf8",
-    "#c084fc",
-    "#f472b6",
-    "#f43f5e",
-    "#495057",
+    "#f87171", "#fb923c", "#fbbf24", "#a3e635", "#34d399", "#22d3ee",
+    "#818cf8", "#c084fc", "#f472b6", "#f43f5e", "#495057",
   ];
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
@@ -223,57 +68,68 @@ const getAvatarColor = (name: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+// USER CONFIG: Adjust Intro Volume here (0.0 to 1.0)
+const INTRO_VOLUME = 0.15;
+const INTRO_URL = "/intro.mp4"; // Replace with local file e.g., "/intro.mp4"
+
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   activeSpeakers,
   toggleMic,
   isRecording,
 }) => {
   // --- Refs ---
-  const videoWrapperRef = useRef<HTMLDivElement | null>(null);
-  const playerRef = useRef<any | null>(null);
-  const currentSrcRef = useRef<string>("");
+  const playerRef = useRef<MediaPlayerInstance>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const currentSrcRef = useRef<string>(INTRO_URL);
   const isRemoteUpdate = useRef(false);
+  const isSwitchingSource = useRef(false);
+  // Store user's preferred volume to restore after intro
+  const userVolumeRef = useRef<number>(1);
 
   // --- Context ---
   const { send, lastMessage, isConnected, isAdmin, userControlsAllowed, proxyEnabled } =
     useWebSocket();
 
-  // Use a ref for permissions to access them inside Video.js event closures without dependency issues
+  // Permissions Ref
   const permissionsRef = useRef({ isAdmin, userControlsAllowed, isConnected, proxyEnabled });
+  useEffect(() => {
+    permissionsRef.current = { isAdmin, userControlsAllowed, isConnected, proxyEnabled };
+  }, [isAdmin, userControlsAllowed, isConnected, proxyEnabled]);
 
   // --- State ---
   const [overlayChat, setOverlayChat] = useState<FloatingMessage[]>([]);
-  const [isPlayerReady, setIsPlayerReady] = useState(false);
+  // Use proper INTRO_URL initialization
+  const [src, setSrc] = useState<string>(INTRO_URL);
+  const [isIntro, setIsIntro] = useState(true);
+  const [showAudioMenu, setShowAudioMenu] = useState(false);
+  const [showCaptionMenu, setShowCaptionMenu] = useState(false);
+  const [ambientMode, setAmbientMode] = useState(true);
 
-  // --- DOM Elements for Portals ---
-  // We create these once. They will be injected into the Video.js DOM structure.
-  const overlayElement = useMemo(() => {
-    const el = document.createElement("div");
-    el.className = "vjs-react-overlay-container";
-    return el;
-  }, []);
+  // --- Media State ---
+  const audioTracks = useMediaState("audioTracks", playerRef);
+  const currentAudioTrack = useMediaState("audioTrack", playerRef);
+  const textTracks = useMediaState("textTracks", playerRef);
+  const currentTextTrack = useMediaState("textTrack", playerRef);
+  const paused = useMediaState("paused", playerRef);
+  const muted = useMediaState("muted", playerRef);
+  const volume = useMediaState("volume", playerRef);
+  const fullscreen = useMediaState("fullscreen", playerRef);
+  const remote = useMediaRemote(playerRef);
 
-  const micControlElement = useMemo(() => {
-    const el = document.createElement("div");
-    el.className = "vjs-control vjs-react-mic-control";
-    el.style.display = "flex";
-    el.style.alignItems = "center";
-    el.style.justifyContent = "center";
-    el.style.cursor = "pointer";
-    return el;
-  }, []);
-
-  // --- Logic: Sync Helper ---
+  // --- Sync Logic ---
   const sendSync = useCallback((
     packetType: 'sync' | 'forceSync',
     time: number,
     paused: boolean
   ) => {
+    // Don't sync the intro video
+    if (isIntro) return;
+
     const { isAdmin, userControlsAllowed, isConnected } = permissionsRef.current;
 
     if (!isConnected) return;
-    // Only Admin or Allowed users can drive the session
     if (!isAdmin && !userControlsAllowed) return;
+    if (isRemoteUpdate.current) return;
 
     send({
       type: packetType,
@@ -281,91 +137,175 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       paused: paused,
       url: currentSrcRef.current,
     });
-  }, [send]);
+  }, [send, isIntro]);
 
-  useEffect(() => {
-    const handleForceSyncRequest = () => {
-      const player = playerRef.current;
-      if (!player) return;
+  // --- Event Handlers ---
+  const onPlay = () => {
+    // We are playing, so switching is done.
+    isSwitchingSource.current = false;
+    if (playerRef.current && !isIntro) sendSync("sync", playerRef.current.currentTime, false);
+  };
 
-      // Send a FORCE sync with current exact state
-      console.log("⚡ Executing Force Sync");
-      sendSync('forceSync', player.currentTime(), player.paused());
-    };
+  const onPause = () => {
+    // Ignore pause events triggered by source switching
+    if (isSwitchingSource.current) return;
+    if (playerRef.current && !isIntro) sendSync("sync", playerRef.current.currentTime, true);
+  };
 
-    window.addEventListener('trigger-force-sync', handleForceSyncRequest);
-    return () => {
-      window.removeEventListener('trigger-force-sync', handleForceSyncRequest);
-    };
-  }, [send, sendSync]);
+  const onSeeked = (time: number) => {
+    if (playerRef.current && !isIntro) sendSync("sync", time, playerRef.current.state.paused);
+  };
 
-  const playVideo = (url: string, autoPlay: boolean = false) => {
-    const player = playerRef.current;
-    if (!player || !url) return;
+  // --- Load Logic ---
+  const loadVideo = useCallback((url: string, autoPlay = false) => {
+    if (!url || url === "#") return;
+
+    // Check if loading Intro (allow partial match for local file or full URL)
+    const isNewIntro = url.includes(INTRO_URL) || url === INTRO_URL;
+    setIsIntro(isNewIntro);
+
+    // Flag start of source switch to suppress phantom pauses
+    isSwitchingSource.current = true;
+
+    // If switching to standard video from intro, reset volume
+    if (!isNewIntro && isIntro && playerRef.current) {
+      playerRef.current.volume = userVolumeRef.current;
+      (playerRef.current as any).loop = false; // Disable loop for normal video
+    }
 
     currentSrcRef.current = url;
 
-    let type = "application/x-mpegURL"; // Default to HLS
-    if (url.match(/\.(mp4|webm|mkv)$/i)) type = "video/mp4";
-
-    let src = url;
+    let finalSrc = url;
     if (
       permissionsRef.current.proxyEnabled &&
       !url.startsWith("/") &&
       !url.includes(window.location.host)
     ) {
-      // Proxy both HLS and MP4/MKV/WebM to ensure CORS bypass and consistent behavior
-      src = `/api/proxy?url=${btoa(url)}`;
+      finalSrc = `/api/proxy?url=${btoa(url)}`;
     }
 
-    // Prevent reloading the same source repeatedly (Robust Check)
-    // We check if the player's current source matches our INTENDED source.
-    const currentPlayerSrc = player.currentSrc();
-    // Decode if needed to compare? No, just check if the strings match approximately or if we are switching modes.
-    // Ideally we check if `currentPlayerSrc` ends with `src` or equals it. 
-    // Video.js often resolves absolute URLs.
+    setSrc(finalSrc);
 
-    // Simplification: logic to detect change is better handled by just checking if we are ALREADY playing this configuration.
-    // If src changed (proxied vs not), we load.
-
-    if (currentPlayerSrc && currentPlayerSrc.includes(src)) {
-      // already playing this exact src (proxied or not)
-      return;
-    }
-
-    player.src({ src, type });
-
-    // [FIXED AUTOPLAY LOGIC] Use the flag passed from the Library click
     if (autoPlay || permissionsRef.current.isAdmin || permissionsRef.current.userControlsAllowed) {
-      player.play()?.catch((e: unknown) => console.warn("Autoplay blocked:", e));
+      setTimeout(() => {
+        playerRef.current?.play();
+      }, 100);
+    }
+  }, [isIntro]);
+
+  // --- Intro Volume Initialization ---
+  useEffect(() => {
+    if (isIntro && playerRef.current) {
+      const player = playerRef.current;
+
+      // Save current user volume to restore later
+      // Only if current volume is NOT the intro volume (avoid overwriting valid user volume with 0.15)
+      if (player.volume !== INTRO_VOLUME) {
+        userVolumeRef.current = player.volume;
+      }
+
+      // Enforce Intro Settings
+      const enforce = () => {
+        if (isIntro && playerRef.current) {
+          player.volume = INTRO_VOLUME;
+          (player as any).loop = true;
+        }
+      };
+
+      // 1. Immediate
+      player.volume = INTRO_VOLUME;
+      (player as any).loop = true;
+      player.muted = false;
+      player.play();
+
+      // 2. On Metadata Load
+      // @ts-ignore
+      player.addEventListener('loaded-metadata', enforce);
+
+      // 3. On Can Play (sometimes persistence hits here)
+      // @ts-ignore
+      player.addEventListener('can-play', enforce);
+
+      // 4. Safety Timeout (overrides slow async persistence)
+      const timeoutId = setTimeout(enforce, 500);
+
+      // 5. Watch for volume changes that might be system-restored
+      const handleVolChange = () => {
+        // If volume jumps high while in intro, clamp it back down ONCE
+        // We assume the first jump is system-restore. 
+        // Subsequent jumps might be user interaction, so we don't lock it forever.
+        // But to be safe, if it's > 0.2 within the first second, we clamp it.
+        if (isIntro && player.volume > 0.2) {
+          console.log("System restored high volume, clamping back to Intro Volume");
+          player.volume = INTRO_VOLUME;
+        }
+      };
+      // @ts-ignore
+      player.addEventListener('volume-change', handleVolChange, { once: true });
+
+      return () => {
+        clearTimeout(timeoutId);
+        // @ts-ignore
+        player.removeEventListener('loaded-metadata', enforce);
+        // @ts-ignore
+        player.removeEventListener('can-play', enforce);
+        // @ts-ignore
+        player.removeEventListener('volume-change', handleVolChange);
+      };
+    }
+  }, [isIntro]);
+
+  const handlePlayIntro = () => {
+    // 1. Always play locally immediately to ensure Autoplay works (captures user gesture)
+    loadVideo(INTRO_URL, true);
+
+    // 2. If Admin, also broadcast to others
+    const { isAdmin, userControlsAllowed } = permissionsRef.current;
+    if (isAdmin || userControlsAllowed) {
+      send({ type: 'load', url: INTRO_URL });
     }
   };
 
-  // --- Effect: Update Permissions Ref ---
+  // --- Listeners ---
   useEffect(() => {
-    permissionsRef.current = { isAdmin, userControlsAllowed, isConnected, proxyEnabled };
-
-    // Auto-reload video if proxy setting changes while playing
-    if (currentSrcRef.current) {
-      playVideo(currentSrcRef.current);
-    }
-  }, [isAdmin, userControlsAllowed, isConnected, proxyEnabled]);
-
-  useEffect(() => {
-    const handleLocalLoad = (event: CustomEvent<PlayVideoDetail>) => {
-      playVideo(event.detail.url, event.detail.autoPlay);
+    const handleLocalLoad = (event: CustomEvent<{ url: string; autoPlay: boolean }>) => {
+      loadVideo(event.detail.url, event.detail.autoPlay);
     };
-
     window.addEventListener('play-video', handleLocalLoad as EventListener);
-
     return () => {
       window.removeEventListener('play-video', handleLocalLoad as EventListener);
     };
-  }, []);
-  // --- Effect: Handle Chat Messages ---
+  }, [loadVideo]);
+
+  useEffect(() => {
+    const handleForceSync = () => {
+      const player = playerRef.current;
+      if (!player) return;
+      sendSync('forceSync', player.currentTime, player.state.paused);
+    };
+    window.addEventListener('trigger-force-sync', handleForceSync);
+    return () => window.removeEventListener('trigger-force-sync', handleForceSync);
+  }, [sendSync]);
+
+  // --- Periodic Sync Heartbeat (Perfect Sync) ---
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (
+        playerRef.current &&
+        !playerRef.current.state.paused &&
+        !isIntro &&
+        (permissionsRef.current.isAdmin || permissionsRef.current.userControlsAllowed)
+      ) {
+        // Send a lightweight sync packet
+        sendSync('sync', playerRef.current.currentTime, false);
+      }
+    }, 2000); // 2 second interval for tight sync
+
+    return () => clearInterval(interval);
+  }, [sendSync, isIntro]);
+
   useEffect(() => {
     if (!lastMessage || lastMessage.type !== "chat") return;
-
     const id = Date.now() + Math.random();
     const newMsg: FloatingMessage = {
       id,
@@ -373,269 +313,393 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       text: lastMessage.text,
       color: getAvatarColor(lastMessage.nick),
     };
-
     setOverlayChat((prev) => [...prev, newMsg]);
-
-    // Auto-remove chat bubble after 6 seconds
-    // ✅ We do NOT assign this to a variable or return a cleanup.
-    // We want this timer to run to completion regardless of new messages.
     setTimeout(() => {
       setOverlayChat((prev) => prev.filter((m) => m.id !== id));
     }, 6000);
-
   }, [lastMessage]);
 
-  // --- Effect: Handle WebSocket Video Commands ---
   useEffect(() => {
     const player = playerRef.current;
     if (!lastMessage || !player) return;
 
-    const msg: ServerMessage = lastMessage;
+    if (lastMessage.type === "load") {
+      loadVideo(lastMessage.url, true); // Load command normally implies play checking
+    } else if (lastMessage.type === "sync" || lastMessage.type === "forceSync") {
+      const { time: serverTime, paused, url } = lastMessage;
 
-    if (msg.type === "load") {
-      playVideo(msg.url);
-    } else if (msg.type === "sync" || msg.type === "forceSync") {
-      const { time, paused, url } = msg;
-
-      // 1. URL Mismatch Check
       if (url && url !== currentSrcRef.current) {
         isRemoteUpdate.current = true;
-        playVideo(url);
+        loadVideo(url, !paused);
       }
 
-      // 2. Time Sync Check
-      const drift = Math.abs(player.currentTime()! - time);
-      const threshold = msg.type === "forceSync" ? 0.1 : 1.5;
+      // 0 LATENCY OPTIMIZATION
+      // 1. Compensate for network latency (approx 80-100ms usually)
+      //    If video is playing, the time "now" is actually serverTime + latency
+      const ESTIMATED_LATENCY = 0.08;
+      const targetTime = paused ? serverTime : (serverTime + ESTIMATED_LATENCY);
 
-      if (drift > threshold) {
+      const currentTime = player.currentTime;
+      const drift = targetTime - currentTime; // Positive = Behind, Negative = Ahead
+
+      // Thresholds
+      const SYNC_THRESHOLD = 0.05; // 50ms (Very tight)
+      const SEEK_THRESHOLD = 0.6;  // 600ms (Hard seek if beyond this)
+
+      if (Math.abs(drift) > SYNC_THRESHOLD || (paused !== player.state.paused)) {
         isRemoteUpdate.current = true;
-        player.currentTime(time);
-      }
 
-      // 3. Play/Pause State Check
-      const isPlayerPaused = player.paused();
-      if (paused && !isPlayerPaused) {
-        isRemoteUpdate.current = true;
-        player.pause();
-      } else if (!paused && isPlayerPaused) {
-        isRemoteUpdate.current = true;
-        player.play()?.catch(() => { });
-      }
+        if (paused !== player.state.paused) {
+          // State Mismatch: Immediate Fix
+          if (paused) player.pause();
+          else player.play();
+          player.currentTime = targetTime; // Hard sync on pause/play transitions
+        } else {
+          // Time Mismatch (Soft vs Hard Sync)
+          if (Math.abs(drift) > SEEK_THRESHOLD) {
+            // 1. HARD SEQUENTIAL SYNC (Drift > 600ms)
+            console.log(`Hard Sync: Seeking ${drift.toFixed(3)}s`);
+            player.currentTime = targetTime;
+            player.playbackRate = 1; // Reset rate
+          } else {
+            // 2. SOFT SYNC (Drift 50ms - 600ms)
+            // Speed up or slow down to catch up smoothly
+            const newRate = drift > 0 ? 1.06 : 0.94; // +/- 6%
+            if (player.playbackRate !== newRate) {
+              console.log(`Soft Sync: Adjusting rate to ${newRate}x for drift ${drift.toFixed(3)}s`);
+              player.playbackRate = newRate;
 
-      // Reset the "remote update" flag after a short delay to allow events to settle
-      setTimeout(() => {
-        isRemoteUpdate.current = false;
-      }, 500);
-    }
-  }, [lastMessage]);
+              // Return to normal speed after we expect to have caught up
+              // Time to catch up = Drift / (RateDiff). E.g. 0.3s / 0.05 = 6s duration
+              // We'll calculate roughly how long to hold this rate
+              const catchUpTimeMs = (Math.abs(drift) / 0.06) * 1000;
 
-  // --- LayoutEffect: Initialize Video.js ---
-  useLayoutEffect(() => {
-    if (!videoWrapperRef.current) return;
-    if (playerRef.current) return; // Prevent double init
+              setTimeout(() => {
+                if (player && Math.abs(player.playbackRate - newRate) < 0.01) {
+                  player.playbackRate = 1;
+                }
+              }, Math.min(catchUpTimeMs, 2000)); // Cap at 2s corrections
+            }
+          }
+        }
 
-    // 1. Create the DOM element
-    const videoElement = document.createElement("video-js");
-    videoElement.classList.add("vjs-big-play-centered", "vjs-theme-fantasy");
-    videoWrapperRef.current.appendChild(videoElement);
-
-    // 2. Initialize Player
-    const player = videojs(videoElement, {
-      controls: true,
-      autoplay: false,
-      preload: "auto",
-      fluid: true,
-      liveui: false,
-      controlBar: {
-        children: [
-          "playToggle",
-          "volumePanel",
-          "currentTimeDisplay",
-          "timeDivider",
-          "durationDisplay",
-          "progressControl",
-          "liveDisplay",
-          "remainingTimeDisplay",
-          "customControlSpacer",
-          "playbackRateMenuButton",
-          "chaptersButton",
-          "descriptionsButton",
-          "subsCapsButton",
-          "audioTrackButton",
-          "videoTrackButton",
-          "qualityMenuButton",
-          "fullscreenToggle",
-        ],
-      },
-    });
-
-    playerRef.current = player;
-
-    // 3. Inject React Portal Containers
-    // Inject Overlays (Chat/Speakers)
-    player.el().appendChild(overlayElement);
-
-    // Inject Mic Button into Control Bar
-    const controlBar = player.getChild("ControlBar");
-    if (controlBar) {
-      const fullscreenToggle = controlBar.getChild("FullscreenToggle");
-      const fsNode = fullscreenToggle?.el();
-      if (fsNode && fsNode.parentNode) {
-        fsNode.parentNode.insertBefore(micControlElement, fsNode);
-      } else {
-        controlBar.el().appendChild(micControlElement);
+        setTimeout(() => { isRemoteUpdate.current = false; }, 200);
       }
     }
-    player.on("ready", () => {
-      setIsPlayerReady(true);
-      if (player.hasClass('vjs-live')) {
-        player.removeClass('vjs-live');
-      }
-    });
-    // 4. Bind Events (with Remote Loop Protection)
-    player.on("play", () => {
-      if (!isRemoteUpdate.current)
-        sendSync("sync", player.currentTime() ?? 0, false);
-    });
-    player.on("pause", () => {
-      if (!isRemoteUpdate.current)
-        sendSync("sync", player.currentTime() ?? 0, true);
-    });
-    player.on("seeked", () => {
-      if (!isRemoteUpdate.current)
-        sendSync("sync", player.currentTime() ?? 0, player.paused());
-    });
-    player.on("fullscreenchange", () => {
-      if (player.isFullscreen()) {
-        // Attempt to lock to landscape
-        try {
-          if (screen.orientation && (screen.orientation as any).lock) {
-            (screen.orientation as any).lock("landscape").catch((e: any) => {
-              console.warn("Screen rotation lock failed:", e);
-            });
-          } else if ((window as any).screen.mozLockOrientation) {
-            (window as any).screen.mozLockOrientation("landscape");
-          } else if ((window as any).screen.msLockOrientation) {
-            (window as any).screen.msLockOrientation("landscape");
-          }
-        } catch (e) {
-          // Ignore errors (feature not supported on some browsers)
-        }
-      } else {
-        // Unlock orientation on exit
-        try {
-          if (screen.orientation && screen.orientation.unlock) {
-            screen.orientation.unlock();
-          } else if ((window as any).screen.mozUnlockOrientation) {
-            (window as any).screen.mozUnlockOrientation();
-          } else if ((window as any).screen.msUnlockOrientation) {
-            (window as any).screen.msUnlockOrientation();
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-    });
-
-    // 5. Mark ready for Portals
-
-    // Cleanup
-    return () => {
-      if (player && !player.isDisposed()) {
-        player.dispose();
-        playerRef.current = null;
-        setIsPlayerReady(false);
-      }
-    };
-  }, []); // Run once on mount
+  }, [lastMessage, loadVideo]);
 
   const isLocked = !isAdmin && !userControlsAllowed;
 
-  return (
-    <div className={`video-container ${isLocked ? "locked-mode" : ""}`}>
-      {/* Video.js Mount Point */}
-      <div data-vjs-player>
-        <div ref={videoWrapperRef} />
-      </div>
+  // --- Ambient Light Loop ---
+  useLayoutEffect(() => {
+    if (!ambientMode || !playerRef.current) return;
 
-      {/* Render Portals only when Video.js is initialized */}
-      {isPlayerReady && (
-        <>
-          {/* 1. Mic Button Portal */}
-          {createPortal(
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleMic();
-              }}
-              title={isRecording ? "Mute Microphone" : "Unmute Microphone"}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: "100%",
-                height: "100%",
-                color: isRecording ? "#ef4444" : "#fff",
-              }}
-            >
-              {isRecording ? (
-                <Mic size={20} className="pulse-anim" />
-              ) : (
-                <MicOff size={20} />
-              )}
-            </div>,
-            micControlElement
+    let animationFrameId: number;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d', { alpha: false }); // Optimize for no alpha
+
+    const loop = () => {
+      // Access the raw video element from Vidstack
+      // @ts-ignore - Internal access
+      const video = playerRef.current?.el?.querySelector('video');
+
+      if (video && canvas && ctx && !video.paused && !video.ended) {
+        // Draw low-res for performance (blur hides details)
+        if (canvas.width !== 50) canvas.width = 50;
+        if (canvas.height !== 50) canvas.height = 50;
+
+        ctx.drawImage(video, 0, 0, 50, 50);
+      }
+      animationFrameId = requestAnimationFrame(loop);
+    };
+
+    loop();
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [ambientMode, src]); // Re-run if src changes or toggled
+
+  return (
+    <div className={`video-player-root ${isLocked ? "locked-mode" : ""}`}>
+      <MediaPlayer
+        ref={playerRef}
+        src={src || undefined}
+        title="SyncPlayer"
+        load="eager"
+        crossOrigin
+        playsInline
+        className="media-player"
+        onPlay={onPlay}
+        onPause={onPause}
+        onSeeked={onSeeked}
+        loop={isIntro}
+        // @ts-ignore
+        disableRemotePlayback={true}
+      >
+        {/* Ambient Canvas - Must be inside to show in Fullscreen */}
+        <canvas
+          ref={canvasRef}
+          className={`ambient-canvas ${ambientMode ? 'active' : ''}`}
+        />
+        <MediaProvider />
+
+        {/* Gestures */}
+        {/* Removed click-to-play/pause as requested */}
+        <Gesture className="gestures-layer" event="dblpointerup" action="toggle:fullscreen" />
+
+        {/* Overlays Layer */}
+        <div className="overlays-layer">
+          {/* Chat */}
+          <div className="vp-chat-container">
+            {overlayChat.map((msg) => (
+              <div key={msg.id} className="vp-chat-bubble">
+                <span className="vp-chat-nick" style={{ color: msg.color }}>{msg.nick}</span>
+                <span className="vp-chat-text">{msg.text}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Speakers */}
+          {activeSpeakers.length > 0 && (
+            <div className="speaker-list">
+              {activeSpeakers.map((name, i) => (
+                <div key={i} className="speaker-pill">
+                  <div className="speaker-icon-circle">
+                    <Mic size={14} color="white" strokeWidth={1.5} />
+                  </div>
+                  {/* Reduced font size handled in CSS */}
+                  <span>{name}</span>
+                  <div className="flex gap-[2px] h-3 items-end">
+                    <div className="wave-bar" style={{ height: '60%', animationDelay: '0s' }}></div>
+                    <div className="wave-bar" style={{ height: '100%', animationDelay: '0.1s' }}></div>
+                    <div className="wave-bar" style={{ height: '50%', animationDelay: '0.2s' }}></div>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
 
-          {/* 2. Overlays Portal */}
-          {createPortal(
-            <div className="vjs-overlay-content">
-              {/* Chat Bubbles */}
-              <div className="vjs-chat-overlay">
-                {overlayChat.map((msg) => (
-                  <div key={msg.id} className="vjs-chat-bubble">
-                    <span
-                      className="vjs-chat-nick"
-                      style={{ color: msg.color }}
-                    >
-                      {msg.nick}
-                    </span>
-                    <span className="vjs-chat-text">{msg.text}</span>
-                  </div>
-                ))}
+          {/* Lock Indicator */}
+          {isLocked && (
+            <div className="lock-indicator">
+              <Lock size={16} strokeWidth={1.5} />
+              <span>Controls Locked</span>
+            </div>
+          )}
+        </div>
+
+        {/* Controls Layer */}
+        <Controls.Root className="controls-layer">
+          <div className="controls-gradient">
+
+            {/* Time Slider */}
+            <div style={{ width: '100%' }}>
+              <TimeSlider.Root
+                className="time-slider group"
+                style={{
+                  pointerEvents: isLocked ? 'none' : 'auto',
+                  opacity: isLocked ? 0.5 : 1
+                }}
+              >
+                <TimeSlider.Track className="time-slider-track">
+                  <TimeSlider.TrackFill className="time-slider-fill" />
+                  <TimeSlider.Progress className="time-slider-progress" />
+                </TimeSlider.Track>
+                <TimeSlider.Thumb className="time-slider-thumb" />
+              </TimeSlider.Root>
+            </div>
+
+            {/* Buttons Row */}
+            <div className="buttons-row">
+              {/* Left Group */}
+              <div className="control-group">
+                <button
+                  className="control-btn play-btn"
+                  onClick={() => !isLocked && remote.togglePaused()}
+                  title={isLocked ? "Controls Locked" : (paused ? "Play" : "Pause")}
+                  style={{
+                    opacity: isLocked ? 0.5 : 1,
+                    cursor: isLocked ? 'not-allowed' : 'pointer'
+                  }}
+                  disabled={isLocked}
+                >
+                  {paused ? (
+                    <Play className="play-icon" strokeWidth={1.5} />
+                  ) : (
+                    <Pause className="pause-icon" strokeWidth={1.5} />
+                  )}
+                </button>
+
+                <div className="volume-group">
+                  <button
+                    className="control-btn volume-btn"
+                    onClick={() => remote.toggleMuted()}
+                    title={muted ? "Unmute" : "Mute"}
+                  >
+                    {muted || volume === 0 ? (
+                      <VolumeX className="mute-icon" strokeWidth={1.5} />
+                    ) : volume < 0.5 ? (
+                      <Volume1 className="vol-low-icon" strokeWidth={1.5} />
+                    ) : (
+                      <Volume2 className="vol-high-icon" strokeWidth={1.5} />
+                    )}
+                  </button>
+                  <VolumeSlider.Root className="volume-slider-container">
+                    <VolumeSlider.Track className="volume-track">
+                      <VolumeSlider.TrackFill className="volume-fill" />
+                      <VolumeSlider.Thumb className="volume-thumb" />
+                    </VolumeSlider.Track>
+                  </VolumeSlider.Root>
+                </div>
+
+                <div className="time-display">
+                  <Time type="current" />
+                  <span className="time-divider">/</span>
+                  <Time type="duration" />
+                </div>
               </div>
 
-              {/* Active Speakers List */}
-              {activeSpeakers.length > 0 && (
-                <div className="vjs-speaker-list">
-                  {activeSpeakers.map((name, i) => (
-                    <div key={i} className="vjs-speaker-item">
-                      <div className="speaker-avatar">
-                        <Mic size={12} color="white" />
-                      </div>
-                      <span className="speaker-name">{name}</span>
-                      <div className="speaker-wave">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Right Group */}
+              <div className="control-group">
+                {/* Mic Toggle */}
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleMic(); }}
+                  title={isRecording ? "Mute Mic" : "Unmute Mic"}
+                  className={`control-btn mic-btn ${isRecording ? 'recording' : ''}`}
+                >
+                  {isRecording ? <Mic size={32} strokeWidth={1.5} /> : <MicOff size={32} strokeWidth={1.5} />}
+                </button>
 
-              {/* Lock Indicator */}
-              {isLocked && (
-                <div className="vjs-lock-indicator">
-                  <span style={{ fontSize: "1.2rem" }}>🔒</span>
-                  <span>Controls Locked</span>
-                </div>
-              )}
-            </div>,
-            overlayElement
-          )}
-        </>
-      )}
+                {/* Captions - Show for Admin even if empty, to debug */}
+                {(textTracks.length > 0 || isAdmin) && (
+                  <div className="relative">
+                    <button
+                      className={`control-btn caption-btn ${currentTextTrack ? 'active' : ''}`}
+                      onClick={() => setShowCaptionMenu(!showCaptionMenu)}
+                      title="Captions"
+                      style={{ opacity: textTracks.length === 0 ? 0.5 : 1 }}
+                    >
+                      <Captions strokeWidth={1.5} />
+                    </button>
+                    {showCaptionMenu && (
+                      <div className="audio-menu">
+                        <div className="audio-menu-header">Captions</div>
+                        {textTracks.length === 0 && <div className="p-2 text-xs text-zinc-500">No captions detected</div>}
+
+                        {textTracks.length > 0 && (
+                          <button
+                            className={`audio-track-item ${!currentTextTrack ? 'active' : ''}`}
+                            onClick={() => {
+                              if (playerRef.current) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                Array.from(playerRef.current.textTracks).forEach((t: any) => {
+                                  t.mode = 'disabled';
+                                });
+                              }
+                              setShowCaptionMenu(false);
+                            }}
+                          >
+                            <span>Off</span>
+                            {!currentTextTrack && <Check size={14} strokeWidth={1.5} />}
+                          </button>
+                        )}
+
+                        {textTracks.map((track) => (
+                          <button
+                            key={track.id || track.label}
+                            className={`audio-track-item ${currentTextTrack?.id === track.id ? 'active' : ''}`}
+                            onClick={() => {
+                              if (playerRef.current) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                Array.from(playerRef.current.textTracks).forEach((t: any) => {
+                                  t.mode = (t.id === track.id) ? 'showing' : 'disabled';
+                                });
+                              }
+                              setShowCaptionMenu(false);
+                            }}
+                          >
+                            <span>{track.label || track.language}</span>
+                            {currentTextTrack?.id === track.id && <Check size={14} strokeWidth={1.5} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Audio Tracks - Show for Admin even if single track */}
+                {(audioTracks.length > 1 || isAdmin) && (
+                  <div className="relative">
+                    <button
+                      className="control-btn"
+                      onClick={() => setShowAudioMenu(!showAudioMenu)}
+                      title="Audio Tracks"
+                      style={{ opacity: audioTracks.length <= 1 ? 0.5 : 1 }}
+                    >
+                      <Languages strokeWidth={1.5} />
+                    </button>
+                    {showAudioMenu && (
+                      <div className="audio-menu">
+                        <div className="audio-menu-header">Audio</div>
+                        {audioTracks.length === 0 && <div className="p-2 text-xs text-zinc-500">No audio tracks detected</div>}
+
+                        {audioTracks.map((track) => (
+                          <button
+                            key={track.id || track.label}
+                            className={`audio-track-item ${currentAudioTrack?.id === track.id ? 'active' : ''}`}
+                            onClick={() => {
+                              if (playerRef.current) {
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                Array.from(playerRef.current.audioTracks).forEach((t: any) => {
+                                  if (t.id === track.id) t.selected = true;
+                                });
+                              }
+                              setShowAudioMenu(false);
+                            }}
+                          >
+                            <span>{track.label || track.language || `Track ${track.id}`}</span>
+                            {currentAudioTrack?.id === track.id && <Check size={14} strokeWidth={1.5} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <button
+                  className={`control-btn ${ambientMode ? 'active-glow' : ''}`}
+                  onClick={() => setAmbientMode(!ambientMode)}
+                  title="Toggle Ambient Mode"
+                >
+                  <Lightbulb size={20} strokeWidth={1.5} className={ambientMode ? "fill-current text-yellow-400" : ""} />
+                </button>
+
+                {!isLocked && (
+                  <button
+                    className={`control-btn ${isIntro ? 'active-glow' : ''}`}
+                    onClick={handlePlayIntro}
+                    title="Play Intro Loop"
+                  >
+                    <Sparkles size={20} strokeWidth={1.5} />
+                  </button>
+                )}
+
+                <button
+                  className="control-btn fs-btn"
+                  onClick={() => remote.toggleFullscreen()}
+                  title={fullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                >
+                  {fullscreen ? (
+                    <Minimize className="minimize-icon" strokeWidth={1.5} />
+                  ) : (
+                    <Maximize className="maximize-icon" strokeWidth={1.5} />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Controls.Root>
+      </MediaPlayer>
+
     </div>
   );
 };

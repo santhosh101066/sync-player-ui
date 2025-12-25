@@ -1,22 +1,29 @@
 :root {
-  --bg-dark: #09090b;
-  --bg-panel: #18181b;
-  --bg-element: #27272a;
-  --bg-element-hover: #3f3f46;
-  /* Brighter hover */
+  /* Glassmorphism Variables */
+  --bg-dark: rgba(9, 9, 11, 0.6);
+  --bg-panel: rgba(24, 24, 27, 0.65);
+  --bg-element: rgba(255, 255, 255, 0.07);
+  --bg-element-hover: rgba(255, 255, 255, 0.12);
+
   --primary: #8b5cf6;
   --primary-hover: #7c3aed;
-  --text-main: #f4f4f5;
-  --text-muted: #a1a1aa;
-  --border: #3f3f46;
+  --text-main: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.6);
+  --border: rgba(255, 255, 255, 0.08);
   --danger: #ef4444;
-  --radius: 8px;
-  /* Slightly tighter radius */
+  --radius: 12px;
+  /* Softer corners */
   --header-height: 70px;
+  --glass-blur: 20px;
 }
 
 body {
-  background-color: var(--bg-dark);
+  /* Rich Abstract Background */
+  background:
+    radial-gradient(circle at 15% 50%, rgba(76, 29, 149, 0.15), transparent 25%),
+    radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.15), transparent 25%),
+    radial-gradient(circle at 50% 50%, #09090b 0%, #000000 100%);
+  background-attachment: fixed;
   color: var(--text-main);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   margin: 0;
@@ -37,13 +44,16 @@ body {
 
 .video-header {
   height: var(--header-height);
-  background: rgba(9, 9, 11, 0.95);
+  background: var(--bg-panel);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
   gap: 20px;
+  z-index: 50;
 }
 
 .app-container {
@@ -54,7 +64,8 @@ body {
 
 .main-content {
   flex: 1;
-  background: #000;
+  background: rgba(0, 0, 0, 0.3);
+  /* Slight tint over video area */
   display: flex;
   flex-direction: column;
   position: relative;
@@ -64,11 +75,14 @@ body {
 .sidebar {
   width: 380px;
   background: var(--bg-panel);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   transition: width 0.3s ease;
+  z-index: 40;
 }
 
 /* --- Inputs & Controls --- */
@@ -80,13 +94,17 @@ body {
   align-items: center;
   gap: 8px;
   color: #fff;
+  margin-right: auto !important;
+  /* Auto push to right for spacing */
 }
 
 .controls {
   display: flex;
-  gap: 10px;
+  gap: 12px;
+  /* Increased gap */
   flex: 1;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  /* Default left align */
   align-items: center;
 }
 
@@ -113,6 +131,8 @@ button {
   justify-content: center;
   gap: 8px;
   height: 40px;
+  min-width: 44px;
+  /* Fixed minimum width */
   padding: 0 16px;
   background: var(--bg-element);
   color: var(--text-main);
@@ -142,9 +162,10 @@ button:active {
 /* Primary Action Button */
 button.primary {
   background: var(--primary);
-  border: 1px solid var(--primary);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  /* Highlight border */
   color: white;
-  box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 button.primary:hover {
@@ -279,7 +300,8 @@ button.recording {
 .chat-input-area {
   padding: 16px;
   border-top: 1px solid var(--border);
-  background: var(--bg-panel);
+  background: rgba(0, 0, 0, 0.2);
+  /* Slightly darker than sidebar for contrast */
   display: flex;
   gap: 10px;
 }
