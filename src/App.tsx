@@ -394,43 +394,15 @@ const AppContent: React.FC = () => {
       {/* --- Main Layout --- */}
       <div className="app-container">
         <div className="main-content">
-          <VideoPlayer
-            activeSpeakers={activeSpeakers}
-            isRecording={isRecording}
-            toggleMic={toggleMic}
-          />
-
-          {/* Connection Status Overlay */}
-          <div
-            style={{
-              position: "absolute",
-              top: 20,
-              right: 20,
-              background: isConnected
-                ? "rgba(34, 197, 94, 0.2)"
-                : "rgba(239, 68, 68, 0.2)",
-              border: `1px solid ${isConnected ? "#22c55e" : "#ef4444"}`,
-              padding: "6px 12px",
-              borderRadius: "20px",
-              fontSize: "0.8rem",
-              color: isConnected ? "#22c55e" : "#ef4444",
-              display: "flex",
-              alignItems: "center",
-              gap: "6px",
-              pointerEvents: "none",
-              zIndex: 50, // Ensure above video
-            }}
-          >
-            <div
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: "currentColor",
-              }}
+          {!showWelcome && !showAdminLogin && (
+            <VideoPlayer
+              activeSpeakers={activeSpeakers}
+              isRecording={isRecording}
+              toggleMic={toggleMic}
             />
-            {isConnected ? "Live" : "Offline"}
-          </div>
+          )}
+
+
         </div>
 
         {/* --- Sidebar --- */}

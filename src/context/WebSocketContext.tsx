@@ -67,6 +67,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   const audioListenersRef = useRef<Set<(data: ArrayBuffer) => void>>(new Set());
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const connectRef = useRef<((nick: string) => void) | null>(null);
+  const isKickedRef = useRef(false);
 
   // --- 1. Audio Subscription Helper ---
   const subscribeToAudio = useCallback((callback: (data: ArrayBuffer) => void) => {
@@ -109,7 +110,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 
 
       // If signaling is still open, try reconnecting the voice channel after a delay.
-      if (signalingRef.current && signalingRef.current.readyState === WebSocket.OPEN) {
+      if (signalingRef.current && signalingRef.current.readyState === WebSocket.OPEN && !isKickedRef.current) {
         // Clear the ref to ensure next call creates a new socket
         voiceRef.current = null;
         setTimeout(() => {
@@ -130,6 +131,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   // --- 3. Signaling Connection Logic (Now defined second) ---
   const connect = useCallback((nick: string) => {
     setNickname(nick);
+    isKickedRef.current = false;
 
     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     if (signalingRef.current) signalingRef.current.close();
@@ -163,6 +165,13 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         // Heartbeat: Respond to server ping
         if (msg.type === 'ping') {
           socket.send(JSON.stringify({ type: 'pong' }));
+        }
+
+        if (msg.type === 'kick') {
+          isKickedRef.current = true;
+          alert("🚫 You have been kicked from the session.");
+          window.location.reload();
+          return;
         }
 
         // A. Handle Handshake
@@ -216,9 +225,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
       // Auto-reconnect signaling
-      reconnectTimeoutRef.current = setTimeout(() => {
-        if (connectRef.current) connectRef.current(nick);
-      }, 3000);
+      if (!isKickedRef.current) {
+        reconnectTimeoutRef.current = setTimeout(() => {
+          if (connectRef.current) connectRef.current(nick);
+        }, 3000);
+      }
     };
 
     signalingRef.current = socket;

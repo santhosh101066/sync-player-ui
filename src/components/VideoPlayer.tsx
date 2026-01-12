@@ -71,7 +71,7 @@ const getAvatarColor = (name: string) => {
 const INTRO_VOLUME = 0.15;
 const INTRO_URL = "/intro.mp4"; // Replace with local file e.g., "/intro.mp4"
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({
+const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
   activeSpeakers,
   toggleMic,
   isRecording,
@@ -141,15 +141,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     time: number,
     paused: boolean
   ) => {
-    // Don't sync the intro video
-    if (isIntro) return;
+    // Debug blocking conditions
+    if (isIntro) { console.warn("[SendSync] Blocked: Intro mode"); return; }
+    if (!isConnected) { console.warn("[SendSync] Blocked: Not connected"); return; }
+    if (!isAdmin && !userControlsAllowed) { console.warn("[SendSync] Blocked: No permissions"); return; }
+    if (isRemoteUpdate.current) { console.warn("[SendSync] Blocked: Remote update in progress"); return; }
 
-    const { isAdmin, userControlsAllowed, isConnected } = permissionsRef.current;
-
-    if (!isConnected) return;
-    if (!isAdmin && !userControlsAllowed) return;
-    if (isRemoteUpdate.current) return;
-
+    console.log(`[SendSync] Sending ${packetType}: time=${time}, paused=${paused}, url=${currentSrcRef.current}`);
     send({
       type: packetType,
       time: time,
@@ -160,23 +158,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // --- Event Handlers ---
   const onPlay = () => {
+    console.log("[Event] onPlay");
     // We are playing, so switching is done.
     isSwitchingSource.current = false;
     if (playerRef.current && !isIntro) sendSync("sync", playerRef.current.currentTime, false);
   };
 
   const onPause = () => {
+    console.log("[Event] onPause");
     // Ignore pause events triggered by source switching
     if (isSwitchingSource.current) return;
     if (playerRef.current && !isIntro) sendSync("sync", playerRef.current.currentTime, true);
   };
 
-  const onSeeked = (time: number) => {
-    if (playerRef.current && !isIntro) sendSync("sync", time, playerRef.current.state.paused);
+  const onSeeked = (time: any) => {
+    // Vidstack onSeeked emits the time as number, but let's be safe and read from reference
+    // Actually Vidstack docs say onSeeked payload is void/event in some versions, but we should rely on current state.
+    // However, if the payload IS time, we can use it. But safest is referencing player.currentTime.
+    if (playerRef.current && !isIntro) sendSync("sync", playerRef.current.currentTime, playerRef.current.paused);
   };
 
   // --- Load Logic ---
-  const loadVideo = useCallback((url: string, autoPlay = false) => {
+  const loadVideo = useCallback((url: string, autoPlay = false, startTime = 0) => {
     if (!url || url === "#") return;
 
     // Check if loading Intro (allow partial match for local file or full URL)
@@ -206,9 +209,40 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setSrc(finalSrc);
 
     if (autoPlay || permissionsRef.current.isAdmin || permissionsRef.current.userControlsAllowed) {
-      setTimeout(() => {
-        playerRef.current?.play();
-      }, 100);
+      if (playerRef.current) {
+        const player = playerRef.current;
+        const attemptPlay = () => {
+          if (startTime > 0) {
+            console.log("[LoadVideo] Seeking to start time:", startTime);
+            player.currentTime = startTime;
+          }
+          player.play().catch(e => console.warn("Load autoplay blocked:", e));
+        };
+
+        if (startTime > 0) {
+          // Check if metadata is ALREADY loaded (canPlay is a good proxy, or readyState)
+          // @ts-ignore
+          const isReady = player.state?.canPlay || player.readyState >= 1;
+
+          if (isReady) {
+            console.log("[LoadVideo] Metadata ready immediately, attempting seek");
+            attemptPlay();
+          } else {
+            // Wait for metadata to ensure we can seek reliably
+            // @ts-ignore
+            player.addEventListener('loaded-metadata', attemptPlay, { once: true });
+
+            // Fallback in case event already fired or is missed
+            setTimeout(() => {
+              // If we haven't advanced past near-zero, try forcing it
+              if (player.currentTime < 0.1) attemptPlay();
+            }, 1000);
+          }
+        } else {
+          // No seek needed, just play after a tick for DOM update
+          setTimeout(attemptPlay, 100);
+        }
+      }
     }
   }, [isIntro]);
 
@@ -235,7 +269,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       player.volume = INTRO_VOLUME;
       (player as any).loop = true;
       player.muted = false;
-      player.play();
+      player.play().catch(e => console.warn("Intro autoplay blocked:", e));
 
       // 2. On Metadata Load
       // @ts-ignore
@@ -308,6 +342,10 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // --- Periodic Sync Heartbeat (Perfect Sync) ---
   useEffect(() => {
+    /* 
+    // DISABLED PER USER REQUEST: "dont sync with others"
+    // We will only sync on explicit events (Play/Pause/Seek) to avoid constant jitter/fighting.
+    
     const interval = setInterval(() => {
       if (
         playerRef.current &&
@@ -321,6 +359,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }, 2000); // 2 second interval for tight sync
 
     return () => clearInterval(interval);
+    */
   }, [sendSync, isIntro]);
 
   useEffect(() => {
@@ -347,63 +386,39 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     } else if (lastMessage.type === "sync" || lastMessage.type === "forceSync") {
       const { time: serverTime, paused, url } = lastMessage;
 
-      if (url && url !== currentSrcRef.current) {
-        isRemoteUpdate.current = true;
-        loadVideo(url, !paused);
-      }
-
       // 0 LATENCY OPTIMIZATION
-      // 1. Compensate for network latency (approx 80-100ms usually)
-      //    If video is playing, the time "now" is actually serverTime + latency
-      const ESTIMATED_LATENCY = 0.08;
+      const ESTIMATED_LATENCY = 0;
       const targetTime = paused ? serverTime : (serverTime + ESTIMATED_LATENCY);
 
-      const currentTime = player.currentTime;
-      const drift = targetTime - currentTime; // Positive = Behind, Negative = Ahead
-
-      // Thresholds
-      const SYNC_THRESHOLD = 0.05; // 50ms (Very tight)
-      const SEEK_THRESHOLD = 0.6;  // 600ms (Hard seek if beyond this)
-
-      if (Math.abs(drift) > SYNC_THRESHOLD || (paused !== player.state.paused)) {
+      if (url && url !== currentSrcRef.current) {
+        console.log("[Sync] URL change detected, loading:", url);
         isRemoteUpdate.current = true;
-
-        if (paused !== player.state.paused) {
-          // State Mismatch: Immediate Fix
-          if (paused) player.pause();
-          else player.play();
-          player.currentTime = targetTime; // Hard sync on pause/play transitions
-        } else {
-          // Time Mismatch (Soft vs Hard Sync)
-          if (Math.abs(drift) > SEEK_THRESHOLD) {
-            // 1. HARD SEQUENTIAL SYNC (Drift > 600ms)
-            console.log(`Hard Sync: Seeking ${drift.toFixed(3)}s`);
-            player.currentTime = targetTime;
-            player.playbackRate = 1; // Reset rate
-          } else {
-            // 2. SOFT SYNC (Drift 50ms - 600ms)
-            // Speed up or slow down to catch up smoothly
-            const newRate = drift > 0 ? 1.06 : 0.94; // +/- 6%
-            if (player.playbackRate !== newRate) {
-              console.log(`Soft Sync: Adjusting rate to ${newRate}x for drift ${drift.toFixed(3)}s`);
-              player.playbackRate = newRate;
-
-              // Return to normal speed after we expect to have caught up
-              // Time to catch up = Drift / (RateDiff). E.g. 0.3s / 0.05 = 6s duration
-              // We'll calculate roughly how long to hold this rate
-              const catchUpTimeMs = (Math.abs(drift) / 0.06) * 1000;
-
-              setTimeout(() => {
-                if (player && Math.abs(player.playbackRate - newRate) < 0.01) {
-                  player.playbackRate = 1;
-                }
-              }, Math.min(catchUpTimeMs, 2000)); // Cap at 2s corrections
-            }
-          }
-        }
-
-        setTimeout(() => { isRemoteUpdate.current = false; }, 200);
+        loadVideo(url, !paused, targetTime);
+        // Ensure we reset remote update flag even after load
+        setTimeout(() => { isRemoteUpdate.current = false; }, 1000);
+        return; // loadVideo handles starting play and time in this case
       }
+
+      // SIMPLIFIED SYNC:
+      // Since we disabled the heartbeat, every 'sync' packet is an explicit user action (Play/Pause/Seek).
+      // We unconditionally apply the state and time to match the Admin.
+
+      isRemoteUpdate.current = true;
+
+      // 1. Apply Time (Seek)
+      if (Math.abs(player.currentTime - targetTime) > 0.05) {
+        player.currentTime = targetTime;
+      }
+
+      // 2. Apply State (Play/Pause)
+      if (paused) {
+        player.pause();
+      } else {
+        player.play().catch(e => console.warn("Sync autoplay blocked:", e));
+      }
+
+      // Reset flag after a short delay to allow events to settle
+      setTimeout(() => { isRemoteUpdate.current = false; }, 500);
     }
   }, [lastMessage, loadVideo]);
 
@@ -414,25 +429,32 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (!ambientMode || !playerRef.current) return;
 
     let animationFrameId: number;
+    let lastFrameTime = 0;
+    const FPS_LIMIT = 30;
+    const interval = 1000 / FPS_LIMIT;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d', { alpha: false }); // Optimize for no alpha
 
-    const loop = () => {
-      // Access the raw video element from Vidstack
-      // @ts-ignore - Internal access
-      const video = playerRef.current?.el?.querySelector('video');
+    const loop = (timestamp: number) => {
+      // Throttle to 30 FPS
+      if (timestamp - lastFrameTime >= interval) {
+        // Access the raw video element from Vidstack
+        // @ts-ignore - Internal access
+        const video = playerRef.current?.el?.querySelector('video');
 
-      if (video && canvas && ctx && !video.paused && !video.ended) {
-        // Draw low-res for performance (blur hides details)
-        if (canvas.width !== 50) canvas.width = 50;
-        if (canvas.height !== 50) canvas.height = 50;
+        if (video && canvas && ctx && !video.paused && !video.ended) {
+          // Draw low-res for performance (blur hides details)
+          if (canvas.width !== 50) canvas.width = 50;
+          if (canvas.height !== 50) canvas.height = 50;
 
-        ctx.drawImage(video, 0, 0, 50, 50);
+          ctx.drawImage(video, 0, 0, 50, 50);
+          lastFrameTime = timestamp;
+        }
       }
       animationFrameId = requestAnimationFrame(loop);
     };
 
-    loop();
+    animationFrameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animationFrameId);
   }, [ambientMode, src]); // Re-run if src changes or toggled
 
@@ -461,11 +483,45 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         <MediaProvider />
 
         {/* Gestures */}
-        {/* Removed click-to-play/pause as requested */}
+        {/* Changed to 'click' for better mobile handling */}
+        <Gesture className="gestures-layer" event="click" action="toggle:controls" />
         <Gesture className="gestures-layer" event="dblpointerup" action="toggle:fullscreen" />
 
-        {/* Overlays Layer */}
+        {/* Speakers - Always Visible Layer (Moved outside overlays) */}
+        {activeSpeakers.length > 0 && (
+          <div className="speaker-list">
+            {activeSpeakers.map((name, i) => (
+              <div key={i} className="speaker-pill">
+                <div className="speaker-icon-circle">
+                  <Mic size={14} color="white" strokeWidth={1.5} />
+                </div>
+                {/* Reduced font size handled in CSS */}
+                <span>{name}</span>
+                <div className="flex gap-[2px] h-3 items-end">
+                  <div className="wave-bar" style={{ height: '60%', animationDelay: '0s' }}></div>
+                  <div className="wave-bar" style={{ height: '100%', animationDelay: '0.1s' }}></div>
+                  <div className="wave-bar" style={{ height: '50%', animationDelay: '0.2s' }}></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Overlays Layer - Will fade with controls */}
         <div className="overlays-layer">
+          {/* Live Status (Moved from App.tsx) */}
+          <div className={`live-status-indicator ${!isConnected ? "offline" : ""}`}>
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "currentColor",
+              }}
+            />
+            {isConnected ? "Live" : "Offline"}
+          </div>
+
           {/* Chat */}
           <div className="vp-chat-container">
             {overlayChat.map((msg) => (
@@ -476,31 +532,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             ))}
           </div>
 
-          {/* Speakers */}
-          {activeSpeakers.length > 0 && (
-            <div className="speaker-list">
-              {activeSpeakers.map((name, i) => (
-                <div key={i} className="speaker-pill">
-                  <div className="speaker-icon-circle">
-                    <Mic size={14} color="white" strokeWidth={1.5} />
-                  </div>
-                  {/* Reduced font size handled in CSS */}
-                  <span>{name}</span>
-                  <div className="flex gap-[2px] h-3 items-end">
-                    <div className="wave-bar" style={{ height: '60%', animationDelay: '0s' }}></div>
-                    <div className="wave-bar" style={{ height: '100%', animationDelay: '0.1s' }}></div>
-                    <div className="wave-bar" style={{ height: '50%', animationDelay: '0.2s' }}></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+
 
           {/* Lock Indicator */}
           {isLocked && (
             <div className="lock-indicator">
               <Lock size={16} strokeWidth={1.5} />
-              <span>Controls Locked</span>
             </div>
           )}
         </div>
@@ -710,3 +747,5 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     </div>
   );
 };
+
+export const VideoPlayer = React.memo(VideoPlayerComponent);

@@ -31,4 +31,5 @@ export type ServerMessage =
     | { type: 'sync' | 'forceSync'; time: number; paused: boolean; url?: string } // Server broadcasts these back
     | { type: 'load'; url: string }
     | { type: 'seek' | 'play' | 'pause'; time: number } // Other sync events
+    | { type: 'kick' }
     | { type: 'ping' } | { type: 'pong' }; // Other sync events
