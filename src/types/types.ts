@@ -5,7 +5,7 @@ export interface ConnectedUser {
     isMuted: boolean;
 }
 
-// --- Messages sent FROM Client TO Server ---
+// ... ClientMessage stays the same ...
 export type ClientMessage =
     | { type: 'identify'; nick: string }
     | { type: 'chat'; text: string; nick: string }
@@ -20,16 +20,16 @@ export type ClientMessage =
     | { type: 'get-users' }
     | { type: 'ping' } | { type: 'pong' };
 
-// --- Messages received FROM Server BY Client ---
 export type ServerMessage =
     | { type: 'welcome'; userId: number }
     | { type: 'user-list'; users: ConnectedUser[] }
-    | { type: 'system-state'; userControlsAllowed: boolean; usersControlsAllowed?: boolean; proxyEnabled?: boolean } // Handle potential typo support
+    | { type: 'system-state'; userControlsAllowed: boolean; proxyEnabled?: boolean }
     | { type: 'admin-success' }
     | { type: 'admin-fail' }
     | { type: 'chat'; nick: string; text: string; isAdmin?: boolean; isSystem?: boolean }
-    | { type: 'sync' | 'forceSync'; time: number; paused: boolean; url?: string } // Server broadcasts these back
+    // ADD THIS NEW TYPE:
+    | { type: 'chat-history'; messages: Array<{ nick: string; text: string; isAdmin: boolean; isSystem: boolean; timestamp: number }> }
+    | { type: 'sync' | 'forceSync'; time: number; paused: boolean; url?: string }
     | { type: 'load'; url: string }
-    | { type: 'seek' | 'play' | 'pause'; time: number } // Other sync events
     | { type: 'kick' }
-    | { type: 'ping' } | { type: 'pong' }; // Other sync events
+    | { type: 'ping' } | { type: 'pong' };

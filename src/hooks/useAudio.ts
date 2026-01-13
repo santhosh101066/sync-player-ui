@@ -1,31 +1,29 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useWebSocket } from '../context/WebSocketContext';
 
-// We will capture at hardware rate but only send 16k
-const TARGET_SAMPLE_RATE = 16000;
-const JITTER_BUFFER_MS = 0.25; // 250ms buffer for stability
+// --- CONFIGURATION ---
+const TARGET_SAMPLE_RATE = 16000; 
+const JITTER_BUFFER_MS = 0.06; 
 
 // --- OPTIMIZED AUDIO WORKLET ---
 const WORKLET_CODE = `
 class MicProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // OPTIMIZATION 1: Sensitivity
-    // Lowered from 0.02 to 0.002 to capture whispers/soft endings
-    this.silenceThreshold = 0.01; 
+    // 1. LOWER THRESHOLD:
+    // Reduced from 0.01 to 0.008 to catch softer word endings better.
+    this.silenceThreshold = 0.008; 
     
-    // OPTIMIZATION 2: Hangover Time
-    // 150 frames * ~2.9ms per frame = ~435ms. 
-    // This keeps the mic open long enough for the "tails" of words.
-    this.HANG_TIME = 150; 
+    // 2. LONGER HANG TIME (The Fix):
+    // Increased from 3200 (200ms) to 8000 (500ms).
+    // The mic will stay open for 0.5 seconds after you stop talking
+    // so the "tail" of your voice is never cut off.
+    this.HANG_TIME = 8000; 
     
     this.hangoverFrames = 0;
-    
-    // Buffer for the DOWNSAMPLED audio
-    this.chunkBuffer = new Int16Array(2048); 
+    this.chunkBuffer = new Int16Array(512); 
     this.chunkIndex = 0;
 
-    // OPTIMIZATION 3: High-Pass Filter State (Removes mud/rumble)
     this.prevIn = 0;
     this.prevOut = 0;
   }
@@ -35,71 +33,45 @@ class MicProcessor extends AudioWorkletProcessor {
     if (!input || input.length === 0) return true;
 
     const channel = input[0];
-    
-    // We create a temporary buffer for the filtered audio
-    // This ensures we calculate volume based on the CLEAN signal
-    const processedChannel = new Float32Array(channel.length);
-
-    // --- STEP A: High-Pass Filter (80Hz cutoff @ 48kHz) ---
-    // Algorithm: y[i] = alpha * (y[i-1] + x[i] - x[i-1])
     const alpha = 0.985; 
+    const ratio = sampleRate / 16000; 
 
-    for (let i = 0; i < channel.length; i++) {
-        const x = channel[i];
-        const y = alpha * (this.prevOut + x - this.prevIn);
-        
-        processedChannel[i] = y;
-        this.prevIn = x;
-        this.prevOut = y;
-    }
+    for (let i = 0; i < channel.length; i += ratio) {
+       const idx = Math.floor(i);
+       if (idx >= channel.length) break;
 
-    // --- STEP B: Calculate Volume (RMS) on Filtered Data ---
-    let sumSquares = 0;
-    for (let i = 0; i < processedChannel.length; i++) {
-        sumSquares += processedChannel[i] * processedChannel[i];
-    }
-    const rms = Math.sqrt(sumSquares / processedChannel.length);
+       const x = channel[idx];
+       
+       // High Pass Filter
+       const y = alpha * (this.prevOut + x - this.prevIn);
+       this.prevIn = x;
+       this.prevOut = y;
 
-    // --- STEP C: Noise Gate Logic ---
-    if (rms > this.silenceThreshold) {
-        this.hangoverFrames = this.HANG_TIME;
-    }
+       // Gate Logic
+       const absY = Math.abs(y);
+       if (absY > this.silenceThreshold) {
+           this.hangoverFrames = this.HANG_TIME;
+       }
 
-    if (this.hangoverFrames > 0) {
-      // If gate is open, decrement timer if below threshold
-      if (rms <= this.silenceThreshold) {
-          this.hangoverFrames--;
-      }
-
-      // --- STEP D: Downsampling (48k -> 16k) ---
-      // We use the 'processedChannel' (filtered audio) here
-      const ratio = sampleRate / 16000; 
-      
-      for (let i = 0; i < processedChannel.length; i += ratio) {
-        const idx = Math.floor(i);
-        if (idx < processedChannel.length) {
-           let sample = processedChannel[idx];
+       if (this.hangoverFrames > 0) {
+           if (absY <= this.silenceThreshold) this.hangoverFrames--;
 
            if (this.chunkIndex < this.chunkBuffer.length) {
-              // OPTIMIZATION 4: Soft Clipping
-              // Instead of hard-clipping at 1.0, we clamp safely
-              // to prevent crackling if someone yells.
-              if (sample > 1.0) sample = 1.0;
-              if (sample < -1.0) sample = -1.0;
-              
-              // Convert Float to Int16
-              this.chunkBuffer[this.chunkIndex] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-              this.chunkIndex++;
+                // Soft Clipping
+                let sample = y;
+                if (sample > 1.0) sample = 1.0;
+                if (sample < -1.0) sample = -1.0;
+
+                this.chunkBuffer[this.chunkIndex] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+                this.chunkIndex++;
            }
-        }
-      }
+       } else if (this.chunkIndex > 0) {
+           this.flush();
+       }
 
-      // Send when buffer is full
-      if (this.chunkIndex >= this.chunkBuffer.length) this.flush();
-
-    } else if (this.chunkIndex > 0) {
-      // Flush leftover data if gate closes so packets don't get stuck
-      this.flush();
+       if (this.chunkIndex >= this.chunkBuffer.length) {
+           this.flush();
+       }
     }
     
     return true;
@@ -116,9 +88,7 @@ registerProcessor('mic-processor', MicProcessor);
 `;
 
 export const useAudio = () => {
-    // 1. Get all necessary items from Context
     const { sendAudio, myUserId, subscribeToAudio, userMap } = useWebSocket();
-
     const [isRecording, setIsRecording] = useState(false);
     const [volume, setVolume] = useState(1.0);
     const volumeRef = useRef(1.0);
@@ -139,7 +109,7 @@ export const useAudio = () => {
 
     const handleSetVolume = (val: number) => { setVolume(val); volumeRef.current = val; };
 
-    // 2. RECEIVER INIT (Standard 16kHz Context)
+    // --- RECEIVER INIT ---
     const initAudio = useCallback(() => {
         if (!audioCtxRef.current) {
             audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
@@ -153,7 +123,7 @@ export const useAudio = () => {
         return audioCtxRef.current;
     }, []);
 
-    // 3. RECEIVER LOGIC
+    // --- RECEIVER LOGIC ---
     useEffect(() => {
         const handleAudioData = (data: ArrayBuffer) => {
             if (!audioCtxRef.current) initAudio();
@@ -165,14 +135,11 @@ export const useAudio = () => {
             }
 
             const view = new DataView(data);
-            const userId = view.getUint32(0, false); // Read User ID from first 4 bytes
-
-            // Mark speaker as active
+            const userId = view.getUint32(0, false);
             speakerActivityRef.current.set(userId, Date.now());
 
             if (ctx.state === 'suspended') return;
 
-            // Extract PCM (skip first 4 bytes)
             const pcmBuffer = data.slice(4);
             const int16Data = new Int16Array(pcmBuffer);
             const float32Data = new Float32Array(int16Data.length);
@@ -184,6 +151,7 @@ export const useAudio = () => {
                 peerAudioStateRef.current[userId] = { nextTime: ctx.currentTime + JITTER_BUFFER_MS };
             }
             const peer = peerAudioStateRef.current[userId];
+            
             const buffer = ctx.createBuffer(1, float32Data.length, TARGET_SAMPLE_RATE);
             buffer.getChannelData(0).set(float32Data);
 
@@ -194,25 +162,26 @@ export const useAudio = () => {
             source.connect(gain);
             gain.connect(ctx.destination);
 
-            let scheduleTime = peer.nextTime;
             const now = ctx.currentTime;
+            
+            if (peer.nextTime < now) {
+                peer.nextTime = now; 
+            }
+            else if (peer.nextTime > now + 0.2) {
+                peer.nextTime = now + JITTER_BUFFER_MS;
+            }
 
-            // Sync Logic
-            if (scheduleTime < now) scheduleTime = now + (JITTER_BUFFER_MS / 2);
-            else if (scheduleTime > now + 1.0) scheduleTime = now + JITTER_BUFFER_MS;
-
-            source.start(scheduleTime);
-            peer.nextTime = scheduleTime + buffer.duration;
+            source.start(peer.nextTime);
+            peer.nextTime += buffer.duration;
         };
 
         const unsubscribe = subscribeToAudio(handleAudioData);
         return () => unsubscribe();
     }, [subscribeToAudio, initAudio]);
 
-    // 4. MICROPHONE LOGIC
+    // --- MIC LOGIC ---
     const toggleMic = useCallback(async () => {
         if (isRecording) {
-            // STOP RECORDING
             micStreamRef.current?.getTracks().forEach(t => t.stop());
             micStreamRef.current = null;
             if (workletNodeRef.current) {
@@ -222,33 +191,28 @@ export const useAudio = () => {
             workletNodeRef.current = null;
             setIsRecording(false);
         } else {
-            // START RECORDING
             try {
                 if (!myUserId) {
                     alert("Not connected to server yet!");
                     return;
                 }
-
                 const ctx = initAudio();
-
                 try {
                     const blob = new Blob([WORKLET_CODE], { type: 'application/javascript' });
                     await ctx.audioWorklet.addModule(URL.createObjectURL(blob));
                 } catch (e) {
-                    console.error(e);
+                    console.error("Worklet load error:", e);
                 }
 
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
-                        echoCancellation: true,
-                        autoGainControl: true,
-                        noiseSuppression: true,
-                        // @ts-ignore
-                        voiceIsolation: true,
+                        echoCancellation: true, 
+                        autoGainControl: false, 
+                        noiseSuppression: false, 
+                        //@ts-ignore
                         latency: 0,
                         sampleRate: TARGET_SAMPLE_RATE,
                         channelCount: 1,
-
                     }
                 });
                 micStreamRef.current = stream;
@@ -258,22 +222,15 @@ export const useAudio = () => {
                 workletNodeRef.current = workletNode;
 
                 workletNode.port.onmessage = (e) => {
-                    // e.data is the Int16Array PCM buffer
                     const pcmData = e.data;
-
-                    // Construct Packet: [UserID (4 bytes)] + [PCM Data]
                     const totalLen = 4 + pcmData.byteLength;
                     const buffer = new ArrayBuffer(totalLen);
                     const view = new DataView(buffer);
-
-                    // Write UserID (Big Endian to match receiver)
-                    // Use ref to get the LATEST ID (fixes reconnect issue)
+                    
                     const currentId = myUserIdRef.current;
-                    if (currentId === null) return; // Should not happen if connected
+                    if (currentId === null) return;
 
                     view.setUint32(0, currentId, false);
-
-                    // Copy PCM
                     const destInt16 = new Int16Array(buffer, 4);
                     const srcInt16 = new Int16Array(pcmData);
                     destInt16.set(srcInt16);
@@ -282,8 +239,6 @@ export const useAudio = () => {
                 };
 
                 source.connect(workletNode);
-                // Do NOT connect to ctx.destination (no self-monitoring)
-
                 setIsRecording(true);
             } catch (e) {
                 console.error("Mic Error", e);

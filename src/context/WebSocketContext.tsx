@@ -6,6 +6,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
+import { io, Socket } from "socket.io-client";
 import type { ConnectedUser, ClientMessage, ServerMessage } from "../types/types";
 
 // Define the shape of a chat message for the UI (History)
@@ -17,9 +18,15 @@ export interface UIChatMessage {
   timestamp: number;
 }
 
+export interface VideoState {
+  url: string;
+  time: number;
+  paused: boolean;
+  timestamp: number;
+}
+
 interface WebSocketContextType {
-  ws: WebSocket | null;
-  voiceWs: WebSocket | null;
+  socket: Socket | null;
   isConnected: boolean;
   connect: (nickname: string) => void;
   send: (data: ClientMessage) => void;
@@ -36,6 +43,7 @@ interface WebSocketContextType {
   proxyEnabled: boolean;
   chatMessages: UIChatMessage[];
   addLocalMessage: (text: string) => void;
+  currentVideoState: VideoState | null;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(
@@ -46,28 +54,25 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   // --- State & Refs ---
-  const [signalingWs, setSignalingWs] = useState<WebSocket | null>(null);
-  const [voiceWs, setVoiceWs] = useState<WebSocket | null>(null);
-  const [myUserId, setMyUserId] = useState<number | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  
+  // User State
   const [nickname, setNickname] = useState("Guest");
-  const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
+  const [myUserId, setMyUserId] = useState<number | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [userMap, setUserMap] = useState<Record<number, string>>({});
+
+  // App State
+  const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([]);
+  const [userMap, setUserMap] = useState<Record<number, string>>({});
   const [userControlsAllowed, setUserControlsAllowed] = useState(false);
   const [proxyEnabled, setProxyEnabled] = useState(true);
   const [chatMessages, setChatMessages] = useState<UIChatMessage[]>([]);
+  const [currentVideoState, setCurrentVideoState] = useState<VideoState | null>(null);
 
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const voiceKeepAliveRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const connectVoiceRef = useRef<((host: string, protocol: string) => void) | null>(null);
-  const signalingRef = useRef<WebSocket | null>(null);
-  const voiceRef = useRef<WebSocket | null>(null);
+  // Refs for Audio
   const audioListenersRef = useRef<Set<(data: ArrayBuffer) => void>>(new Set());
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const connectRef = useRef<((nick: string) => void) | null>(null);
-  const isKickedRef = useRef(false);
 
   // --- 1. Audio Subscription Helper ---
   const subscribeToAudio = useCallback((callback: (data: ArrayBuffer) => void) => {
@@ -77,183 +82,135 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  // --- 2. Voice Connection Logic (Now defined first) ---
-  const connectVoice = useCallback((host: string, protocol: string) => {
-    // Check if a voice socket is already open before creating a new one
-    if (voiceRef.current && voiceRef.current.readyState === WebSocket.OPEN) return;
-
-    const vSocket = new WebSocket(`${protocol}//${host}/voice`);
-    vSocket.binaryType = "arraybuffer";
-
-    voiceRef.current = vSocket;
-    setVoiceWs(vSocket);
-
-    vSocket.onopen = () => {
-      console.log("🎤 Voice Channel Ready");
-      setVoiceWs(vSocket);
-      voiceKeepAliveRef.current = setInterval(() => {
-        if (vSocket.readyState === WebSocket.OPEN) {
-          vSocket.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 20000);
-    };
-
-    vSocket.onmessage = (event: MessageEvent) => {
-      if (event.data instanceof ArrayBuffer) {
-        audioListenersRef.current.forEach((cb) => cb(event.data));
-      }
-    };
-
-    vSocket.onclose = () => {
-      console.log("🎤 Voice Channel Closed. Attempting reconnect...");
-      setVoiceWs(null);
-
-
-      // If signaling is still open, try reconnecting the voice channel after a delay.
-      if (signalingRef.current && signalingRef.current.readyState === WebSocket.OPEN && !isKickedRef.current) {
-        // Clear the ref to ensure next call creates a new socket
-        voiceRef.current = null;
-        setTimeout(() => {
-          // Safe recursive call via ref
-          if (connectVoiceRef.current) {
-            connectVoiceRef.current(host, protocol);
-          }
-        }, 2000); // Reduced delay to 2s for faster recovery
-      }
-    };
-    vSocket.onerror = (err) => {
-      console.error("Mic Socket Error:", err);
-      vSocket.close(); // Force close to trigger onclose logic
-    };
-
-  }, []);
-
-  // --- 3. Signaling Connection Logic (Now defined second) ---
+  // --- 2. Connection Logic (Socket.IO) ---
   const connect = useCallback((nick: string) => {
     setNickname(nick);
-    isKickedRef.current = false;
 
-    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-    if (signalingRef.current) signalingRef.current.close();
-    if (voiceRef.current) voiceRef.current.close();
-
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = import.meta.env.DEV ? "localhost:8000" : window.location.host;
-
-    const socket = new WebSocket(`${protocol}//${host}/sync`);
-
-    socket.onopen = () => {
-      console.log("🟢 Signaling Connected");
-      setIsConnected(true);
-      const identityMsg: ClientMessage = { type: "identify", nick };
-      socket.send(JSON.stringify(identityMsg));
-
-      // Heartbeat: Send ping every 30 seconds
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 30000);
-    };
-
-    socket.onmessage = (event: MessageEvent) => {
-      try {
-        if (typeof event.data !== 'string') return;
-        const msg = JSON.parse(event.data) as ServerMessage;
-
-        // Heartbeat: Respond to server ping
-        if (msg.type === 'ping') {
-          socket.send(JSON.stringify({ type: 'pong' }));
-        }
-
-        if (msg.type === 'kick') {
-          isKickedRef.current = true;
-          alert("🚫 You have been kicked from the session.");
-          window.location.reload();
-          return;
-        }
-
-        // A. Handle Handshake
-        if (msg.type === "welcome") {
-          setMyUserId(msg.userId);
-          connectVoice(host, protocol);
-        }
-
-        // B. Handle State Updates
-        if (msg.type === 'user-list') {
-          setConnectedUsers(msg.users);
-          const map: Record<number, string> = {};
-          msg.users.forEach((u) => map[u.id] = u.nick);
-          setUserMap(map);
-        }
-        if (msg.type === 'system-state') {
-          setUserControlsAllowed(msg.userControlsAllowed);
-          if (msg.proxyEnabled !== undefined) setProxyEnabled(msg.proxyEnabled);
-        }
-        if (msg.type === 'admin-success') {
-          setIsAdmin(true);
-        }
-
-        // Global Chat Handler (Fixes tab switch duplication)
-        if (msg.type === 'chat') {
-          setChatMessages(prev => [...prev, {
-            nick: msg.nick,
-            text: msg.text,
-            isAdmin: msg.isAdmin,
-            isSystem: msg.isSystem,
-            timestamp: Date.now()
-          }]);
-        }
-
-        setLastMessage(msg);
-      } catch (e) {
-        console.error("WS Message Error", e);
-      }
-    };
-
-    socket.onclose = () => {
-      console.log("🔴 Signaling Disconnected");
-      setIsConnected(false);
-      setSignalingWs(null);
-
-      // Cleanly close voice channel and stop heartbeat on primary disconnect
-      if (voiceRef.current) {
-        voiceRef.current.close();
-        setVoiceWs(null);
-      }
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-
-      // Auto-reconnect signaling
-      if (!isKickedRef.current) {
-        reconnectTimeoutRef.current = setTimeout(() => {
-          if (connectRef.current) connectRef.current(nick);
-        }, 3000);
-      }
-    };
-
-    signalingRef.current = socket;
-    setSignalingWs(socket);
-  }, [connectVoice]);
-
-  useEffect(() => {
-    connectRef.current = connect;
-  }, [connect]);
-
-  // --- 4. Sending Functions ---
-  const send = useCallback((data: ClientMessage) => {
-    if (signalingRef.current?.readyState === WebSocket.OPEN) {
-      signalingRef.current.send(JSON.stringify(data));
+    if (socket) {
+        socket.disconnect();
     }
-  }, []);
+
+    const host = import.meta.env.DEV ? "http://localhost:8000" : window.location.origin;
+    console.log("Connecting to:", host);
+
+    const newSocket = io(host, {
+        transports: ['polling', 'websocket'],
+        reconnection: true,
+        reconnectionAttempts: 20,
+        reconnectionDelay: 1000,
+    });
+
+    newSocket.on("connect", () => {
+        console.log("🟢 Connected via Socket.IO");
+        setIsConnected(true);
+        newSocket.emit("message", { type: "identify", nick });
+    });
+
+    newSocket.on("disconnect", (reason) => {
+        console.log("🔴 Disconnected:", reason);
+        setIsConnected(false);
+    });
+
+    newSocket.on("connect_error", (err) => {
+        console.error("Connection Error:", err.message);
+    });
+
+    // --- Handle Text Protocol ---
+    newSocket.on("message", (msg: ServerMessage) => {
+        try {
+            if (msg.type === 'kick') {
+                alert("🚫 You have been kicked from the session.");
+                window.location.reload();
+                return;
+            }
+
+            if (msg.type === "welcome") {
+                setMyUserId(msg.userId);
+            }
+
+            if (msg.type === 'user-list') {
+                setConnectedUsers(msg.users);
+                const map: Record<number, string> = {};
+                msg.users.forEach((u) => map[u.id] = u.nick);
+                setUserMap(map);
+            }
+            if (msg.type === 'system-state') {
+                setUserControlsAllowed(msg.userControlsAllowed);
+                if (msg.proxyEnabled !== undefined) setProxyEnabled(msg.proxyEnabled);
+            }
+            if (msg.type === 'admin-success') {
+                setIsAdmin(true);
+            }
+
+            // Chat: Filter own messages
+            if (msg.type === 'chat') {
+                if (msg.nick === nick && !msg.isSystem) {
+                    return;
+                }
+                setChatMessages(prev => [...prev, {
+                    nick: msg.nick,
+                    text: msg.text,
+                    isAdmin: msg.isAdmin,
+                    isSystem: msg.isSystem,
+                    timestamp: Date.now()
+                }]);
+            }
+
+            // ADD THIS: Handle Chat History
+            if (msg.type === 'chat-history') {
+                // Convert to UI format and SET as state (don't append, replace)
+                const history = msg.messages.map(m => ({
+                    nick: m.nick,
+                    text: m.text,
+                    isAdmin: m.isAdmin,
+                    isSystem: m.isSystem,
+                    timestamp: m.timestamp
+                }));
+                setChatMessages(history);
+            }
+            if (msg.type === 'sync' || msg.type === 'forceSync') {
+                setCurrentVideoState(prev => ({
+                    url: msg.url || prev?.url || "", // Keep existing URL if update doesn't have one
+                    time: msg.time,
+                    paused: msg.paused,
+                    timestamp: Date.now()
+                }));
+            }
+            if (msg.type === 'load') {
+                setCurrentVideoState({
+                    url: msg.url,
+                    time: 0,
+                    paused: false,
+                    timestamp: Date.now()
+                });
+            }
+
+            setLastMessage(msg);
+        } catch (e) {
+            console.error("Message Error", e);
+        }
+    });
+
+    newSocket.on("voice", (data: ArrayBuffer) => {
+        audioListenersRef.current.forEach((cb) => cb(data));
+    });
+
+    setSocket(newSocket);
+  }, [socket]); 
+
+  // --- 3. Sending Functions ---
+  const send = useCallback((data: ClientMessage) => {
+    if (socket?.connected) {
+        socket.emit("message", data);
+    }
+  }, [socket]);
 
   const sendAudio = useCallback((data: ArrayBuffer) => {
-    if (voiceRef.current?.readyState === WebSocket.OPEN) {
-      voiceRef.current.send(data);
+    if (socket?.connected) {
+        socket.emit("voice", data);
     }
-  }, []);
+  }, [socket]);
 
-  // Helper to add local messages (optimistic UI)
   const addLocalMessage = useCallback((text: string) => {
     setChatMessages(prev => [...prev, {
       nick: nickname,
@@ -263,25 +220,16 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
     }]);
   }, [nickname]);
 
-  // --- Cleanup ---
   useEffect(() => {
     return () => {
-      signalingRef.current?.close();
-      voiceRef.current?.close();
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-      if (voiceKeepAliveRef.current) clearInterval(voiceKeepAliveRef.current);
+      if (socket) socket.disconnect();
     };
   }, []);
-
-  useEffect(() => {
-    connectVoiceRef.current = connectVoice;
-  }, [connectVoice]);
 
   return (
     <WebSocketContext.Provider
       value={{
-        ws: signalingWs,
-        voiceWs,
+        socket,
         isConnected,
         connect,
         send,
@@ -297,7 +245,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         userControlsAllowed,
         proxyEnabled,
         chatMessages,
-        addLocalMessage
+        addLocalMessage,
+        currentVideoState
       }}
     >
       {children}

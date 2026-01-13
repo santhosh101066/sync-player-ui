@@ -394,13 +394,13 @@ const AppContent: React.FC = () => {
       {/* --- Main Layout --- */}
       <div className="app-container">
         <div className="main-content">
-          {!showWelcome && !showAdminLogin && (
+         
             <VideoPlayer
               activeSpeakers={activeSpeakers}
               isRecording={isRecording}
               toggleMic={toggleMic}
             />
-          )}
+          
 
 
         </div>

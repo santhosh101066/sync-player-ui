@@ -270,7 +270,7 @@ video {
 /* Gradient Background for readability */
 .controls-gradient {
     background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.5) 50%, transparent 100%);
-    width: 100%;
+    /* width: 100%; */
     padding: 0 24px 20px 24px;
     /* Bottom padding */
     pointer-events: auto;
@@ -586,6 +586,40 @@ video {
     opacity: 0.5;
 }
 
+.video-player-root input[type="range"] {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background: transparent !important;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+}
+
+/* 2. Hide the Webkit (Chrome/Safari) thumb */
+.video-player-root input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    height: 100%;
+    width: 0;
+    opacity: 0;
+    border: none;
+}
+
+/* 3. Hide the Firefox thumb */
+.video-player-root input[type="range"]::-moz-range-thumb {
+    border: none !important;
+    background: transparent !important;
+    height: 100%;
+    width: 0;
+    opacity: 0;
+}
+
+/* 4. Remove Firefox focus dotted line */
+.video-player-root input[type="range"]::-moz-focus-outer {
+    border: 0;
+}
+
 /* =========================================
    ANIMATIONS
    ========================================= */
@@ -695,7 +729,7 @@ video {
     }
 
     .control-group {
-        gap: 2px;
+        gap: 8px;
         /* Reduced from 8px to 2px for tighter spacing */
     }
 
@@ -746,8 +780,8 @@ video {
 
     /* Reduce Play Button Size further */
     .play-btn {
-        width: 22px;
-        height: 22px;
+        width: 28px;
+        height: 28px;
     }
 
     /* Reduce Volume Slider Width further */
