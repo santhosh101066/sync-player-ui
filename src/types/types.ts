@@ -33,4 +33,5 @@ export type ServerMessage =
     | { type: 'sync' | 'forceSync'; time: number; paused: boolean; url?: string }
     | { type: 'load'; url: string }
     | { type: 'kick' }
-    | { type: 'ping' } | { type: 'pong' };
+    | { type: 'ping' } | { type: 'pong' }
+    | { type: 'auth-success'; nick: string; picture?: string };

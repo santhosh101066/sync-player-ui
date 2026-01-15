@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { WebSocketProvider, useWebSocket } from "./context/WebSocketContext";
 import { VideoPlayer } from "./components/VideoPlayer";
 import { Chat } from "./components/Chat";
@@ -39,13 +39,14 @@ const msgHasUrl = (msg: any): msg is { url: string; type: string } => {
 const AppContent: React.FC = () => {
   // 1. Data Layer
   const {
-    isConnected,
     connect,
     send,
     isAdmin,
     userControlsAllowed,
     proxyEnabled,
     lastMessage,
+    nickname,
+    userPicture
   } = useWebSocket();
 
   // 2. Audio Layer
@@ -61,28 +62,14 @@ const AppContent: React.FC = () => {
 
   // 3. UI State
   const [showWelcome, setShowWelcome] = useState(true);
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "library" | "users">(
     "chat"
   );
 
   // 4. Form Inputs
-  const [nameInput, setNameInput] = useState("");
-  const [adminPassword, setAdminPassword] = useState("");
   const [urlInput, setUrlInput] = useState("");
   const currentServerUrlRef = useRef(""); // To prevent overwriting user input
-  const pendingAdminLogin = useRef(false);
-
-  useEffect(() => {
-    if (isConnected && pendingAdminLogin.current) {
-      send({ type: "admin-login", password: adminPassword });
-      pendingAdminLogin.current = false; // Stop waiting
-      setTimeout(() => {
-        setShowAdminLogin(false);
-      }, 0); // Close modal
-    }
-  }, [isConnected, adminPassword, send]);
 
   // --- Effect: Sync Input Box with Actual Playing Video ---
   // --- Effect: Sync Input Box with Actual Playing Video ---
@@ -101,26 +88,7 @@ const AppContent: React.FC = () => {
   }, [lastMessage]);
 
   // --- Actions ---
-  const handleJoin = useCallback(() => {
-    if (!nameInput.trim()) return;
-    connect(nameInput);
-    setShowWelcome(false);
-    // Attempt to start audio context on user interaction
-    initAudio();
-  }, [nameInput, connect, initAudio]);
-
-  const handleAdminLogin = useCallback(() => {
-    if (isConnected) {
-      // ✅ Happy Path: Already connected? Send immediately.
-      send({ type: "admin-login", password: adminPassword });
-      setShowAdminLogin(false);
-    } else {
-      // ⏳ Wait Path: Connect, then set the flag.
-      // The useEffect above will take over once 'isConnected' becomes true.
-      connect("Admin");
-      pendingAdminLogin.current = true;
-    }
-  }, [isConnected, adminPassword, send, connect]);
+  // (handleJoin removed)
 
   const toggleUserControls = () => {
     send({ type: "toggle-user-controls", value: !userControlsAllowed });
@@ -149,107 +117,34 @@ const AppContent: React.FC = () => {
     window.dispatchEvent(new CustomEvent("trigger-force-sync"));
   };
 
-  useEffect(() => {
-    if (lastMessage && lastMessage.type === 'admin-fail') {
-      alert("❌ Wrong Password!");
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setShowAdminLogin(true); // Re-open the modal so they can try again
-    }
-  }, [lastMessage]);
+
 
 
   return (
     <div className="app-layout">
       {/* --- Modals --- */}
-      {(showWelcome || showAdminLogin) && (
+      {showWelcome && (
         <div className="modal-overlay">
           <div className="modal">
-            {showWelcome ? (
-              <>
-                <h2>👤 Identify Yourself</h2>
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <GoogleLogin
-                    onSuccess={credentialResponse => {
-                      if (credentialResponse.credential) {
-                        // Send raw token to server
-                        connect("Google User", credentialResponse.credential);
-                        setShowWelcome(false);
-                        initAudio();
-                      }
-                    }}
-                    onError={() => {
-                      console.log('Login Failed');
-                    }}
-                    theme="filled_black"
-                    shape="pill"
-                  />
-                </div>
-
-                <div style={{ textAlign: 'center', margin: '10px 0', opacity: 0.5 }}>— OR —</div>
-                <input
-                  type="text"
-                  placeholder="Enter a nickname..."
-                  value={nameInput}
-                  onChange={(e) => setNameInput(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleJoin()}
-                  autoFocus
-                />
-                <button
-                  className="primary"
-                  style={{ width: "100%" }}
-                  onClick={handleJoin}
-                >
-                  Enter Session
-                </button>
-                <div
-                  style={{
-                    textAlign: "center",
-                    fontSize: "0.85em",
-                    color: "#666",
-                    cursor: "pointer",
-                    marginTop: "8px",
-                  }}
-                  onClick={() => {
+            <h2>👤 Identify Yourself</h2>
+            <div style={{ display: 'flex', justifyContent: 'center', flexDirection: 'column', alignItems: 'center' }}>
+              <p style={{ marginBottom: '20px', color: '#666' }}>Please log in with Google to join.</p>
+              <GoogleLogin
+                onSuccess={credentialResponse => {
+                  if (credentialResponse.credential) {
+                    // Send raw token to server
+                    connect(credentialResponse.credential);
                     setShowWelcome(false);
-                    setShowAdminLogin(true);
-                  }}
-                >
-                  Switch to Admin Login
-                </div>
-              </>
-            ) : (
-              <>
-                <h2>🛡️ Admin Access</h2>
-                <input
-                  type="password"
-                  placeholder="Admin Password"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleAdminLogin()}
-                  autoFocus
-                />
-                <button
-                  className="primary"
-                  style={{ width: "100%", marginTop: "10px" }}
-                  onClick={handleAdminLogin}
-                >
-                  Login
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAdminLogin(false);
-                    setShowWelcome(true);
-                  }}
-                  style={{
-                    width: "100%",
-                    marginTop: "10px",
-                    background: "transparent",
-                  }}
-                >
-                  Cancel
-                </button>
-              </>
-            )}
+                    initAudio();
+                  }
+                }}
+                onError={() => {
+                  console.log('Login Failed');
+                }}
+                theme="filled_black"
+                shape="pill"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -279,6 +174,21 @@ const AppContent: React.FC = () => {
 
             {/* Spacer to push controls right on desktop, or managed via flex on mobile */}
             <div className="header-spacer"></div>
+
+            {/* User Profile */}
+            <div className="user-profile" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '12px', paddingRight: '12px', borderRight: '1px solid var(--border)' }}>
+              {userPicture ? (
+                <img src={userPicture} alt="Profile" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                  {nickname.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{nickname}</span>
+                {isAdmin && <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 500 }}>ADMIN</span>}
+              </div>
+            </div>
 
             {/* Mic and Volume */}
             <div className="primary-controls">

@@ -30,7 +30,7 @@ export interface VideoState {
 interface WebSocketContextType {
   socket: Socket | null;
   isConnected: boolean;
-  connect: (nickname: string, googleToken?: string) => void;
+  connect: (googleToken: string) => void;
   send: (data: ClientMessage) => void;
   sendAudio: (data: ArrayBuffer) => void;
   lastMessage: ServerMessage | null;
@@ -86,8 +86,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // --- 2. Connection Logic (Socket.IO) ---
-  const connect = useCallback((nick: string, googleToken?: string) => {
-    setNickname(nick);
+  const connect = useCallback((googleToken: string) => {
+    // Temporary nick until server validates
+    setNickname("Authenticating...");
 
     if (socket) {
       socket.disconnect();
@@ -108,8 +109,6 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsConnected(true);
       if (googleToken) {
         newSocket.emit("message", { type: 'auth-google', token: googleToken });
-      } else {
-        newSocket.emit("message", { type: "identify", nick });
       }
     });
 
@@ -145,13 +144,19 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
           setUserControlsAllowed(msg.userControlsAllowed);
           if (msg.proxyEnabled !== undefined) setProxyEnabled(msg.proxyEnabled);
         }
+        if (msg.type === 'auth-success') {
+          // Authentication confirmed!
+          setNickname(msg.nick);
+          // Note: picture is derived from connectedUsers, but we could store it if needed.
+          // For now, msg.nick is sufficient to stop "Authenticating..."
+        }
         if (msg.type === 'admin-success') {
           setIsAdmin(true);
         }
 
         // Chat: Filter own messages
         if (msg.type === 'chat') {
-          if (msg.nick === nick && !msg.isSystem) {
+          if (msg.nick === nickname && !msg.isSystem) {
             return;
           }
           setChatMessages(prev => [...prev, {
@@ -239,6 +244,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
+  const userPicture = connectedUsers.find(u => u.id === myUserId)?.picture;
+
   return (
     <WebSocketContext.Provider
       value={{
@@ -259,7 +266,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         proxyEnabled,
         chatMessages,
         addLocalMessage,
-        currentVideoState
+        currentVideoState,
+        userPicture
       }}
     >
       {children}
