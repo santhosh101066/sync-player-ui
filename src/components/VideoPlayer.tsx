@@ -398,7 +398,13 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
   const handlePlayIntro = () => {
     loadVideo(INTRO_URL, true);
     const { isAdmin, userControlsAllowed } = permissionsRef.current;
-    if (isAdmin || userControlsAllowed) send({ type: 'load', url: INTRO_URL });
+    if (isAdmin || userControlsAllowed) {
+      send({ type: 'load', url: INTRO_URL });
+      // Force play state immediately after load (server defaults load to paused)
+      setTimeout(() => {
+        send({ type: 'forceSync', url: INTRO_URL, time: 0, paused: false });
+      }, 200);
+    }
   };
 
   // --- Incoming Sync Events ---
