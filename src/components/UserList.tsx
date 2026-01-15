@@ -36,16 +36,18 @@ export const UserList: React.FC<UserListProps> = ({ activeSpeakers }) => {
                                 <div style={{
                                     width: '32px', height: '32px', borderRadius: '50%',
                                     background: user.isMuted ? '#ef4444' : (isSpeaking ? '#22c55e' : '#3f3f46'),
+                                    backgroundImage: user.picture ? `url(${user.picture})` : 'none',
+                                    backgroundSize: 'cover',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                                     color: 'white', fontWeight: 'bold', fontSize: '0.8rem', flexShrink: 0
                                 }}>
-                                    {user.isMuted ? <MicOff size={14} /> : user.nick.charAt(0).toUpperCase()}
+                                    {user.isMuted ? <MicOff size={14} /> : (user.picture ? null : user.nick.charAt(0).toUpperCase())}
                                 </div>
-                                
+
                                 {/* Info */}
                                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                    <span style={{ 
-                                        fontWeight: 500, 
+                                    <span style={{
+                                        fontWeight: 500,
                                         color: user.isMuted ? '#ef4444' : (isSpeaking ? '#22c55e' : 'white'),
                                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
                                     }}>
@@ -58,7 +60,7 @@ export const UserList: React.FC<UserListProps> = ({ activeSpeakers }) => {
                             {/* Actions */}
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 {isAdmin && !isMe && (
-                                    <button 
+                                    <button
                                         onClick={() => toggleMute(user.id)}
                                         style={{
                                             background: 'transparent', border: '1px solid var(--border)',

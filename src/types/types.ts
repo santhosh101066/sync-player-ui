@@ -3,12 +3,13 @@ export interface ConnectedUser {
     nick: string;
     isAdmin: boolean;
     isMuted: boolean;
+    picture?: string;
 }
 
 // ... ClientMessage stays the same ...
 export type ClientMessage =
     | { type: 'identify'; nick: string }
-    | { type: 'chat'; text: string; nick: string }
+    | { type: 'chat'; text: string; nick: string; image?: string; picture?: string }
     | { type: 'admin-login'; password: string }
     | { type: 'sync' | 'forceSync'; time: number; paused: boolean; url?: string }
     | { type: 'load'; url: string }
@@ -26,9 +27,9 @@ export type ServerMessage =
     | { type: 'system-state'; userControlsAllowed: boolean; proxyEnabled?: boolean }
     | { type: 'admin-success' }
     | { type: 'admin-fail' }
-    | { type: 'chat'; nick: string; text: string; isAdmin?: boolean; isSystem?: boolean }
+    | { type: 'chat'; nick: string; text: string; isAdmin?: boolean; isSystem?: boolean; image?: string; picture?: string }
     // ADD THIS NEW TYPE:
-    | { type: 'chat-history'; messages: Array<{ nick: string; text: string; isAdmin: boolean; isSystem: boolean; timestamp: number }> }
+    | { type: 'chat-history'; messages: Array<{ nick: string; text: string; isAdmin: boolean; isSystem: boolean; timestamp: number; image?: string; picture?: string }> }
     | { type: 'sync' | 'forceSync'; time: number; paused: boolean; url?: string }
     | { type: 'load'; url: string }
     | { type: 'kick' }

@@ -23,6 +23,7 @@ import {
   Globe,
 } from "lucide-react";
 import "./App.css";
+import { GoogleLogin } from "@react-oauth/google";
 
 
 // Define a type guard for messages that might contain URLs
@@ -70,6 +71,7 @@ const AppContent: React.FC = () => {
   const [nameInput, setNameInput] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [urlInput, setUrlInput] = useState("");
+  const currentServerUrlRef = useRef(""); // To prevent overwriting user input
   const pendingAdminLogin = useRef(false);
 
   useEffect(() => {
@@ -83,17 +85,20 @@ const AppContent: React.FC = () => {
   }, [isConnected, adminPassword, send]);
 
   // --- Effect: Sync Input Box with Actual Playing Video ---
+  // --- Effect: Sync Input Box with Actual Playing Video ---
   useEffect(() => {
     if (!lastMessage || !msgHasUrl(lastMessage)) return;
 
-    // Update input if the server says we are playing a different URL
-    if (lastMessage.url && lastMessage.url !== urlInput) {
+    // Update input IF the server says we are playing a different URL than what we last KNEW about
+    if (lastMessage.url && lastMessage.url !== currentServerUrlRef.current) {
+
       // Ignore intro URL updates in the input box to keep it clean
       if (!lastMessage.url.includes("/intro.mp4")) {
         setUrlInput(lastMessage.url);
+        currentServerUrlRef.current = lastMessage.url;
       }
     }
-  }, [lastMessage, urlInput]);
+  }, [lastMessage]);
 
   // --- Actions ---
   const handleJoin = useCallback(() => {
@@ -162,6 +167,25 @@ const AppContent: React.FC = () => {
             {showWelcome ? (
               <>
                 <h2>👤 Identify Yourself</h2>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <GoogleLogin
+                    onSuccess={credentialResponse => {
+                      if (credentialResponse.credential) {
+                        // Send raw token to server
+                        connect("Google User", credentialResponse.credential);
+                        setShowWelcome(false);
+                        initAudio();
+                      }
+                    }}
+                    onError={() => {
+                      console.log('Login Failed');
+                    }}
+                    theme="filled_black"
+                    shape="pill"
+                  />
+                </div>
+
+                <div style={{ textAlign: 'center', margin: '10px 0', opacity: 0.5 }}>— OR —</div>
                 <input
                   type="text"
                   placeholder="Enter a nickname..."
@@ -394,13 +418,13 @@ const AppContent: React.FC = () => {
       {/* --- Main Layout --- */}
       <div className="app-container">
         <div className="main-content">
-         
-            <VideoPlayer
-              activeSpeakers={activeSpeakers}
-              isRecording={isRecording}
-              toggleMic={toggleMic}
-            />
-          
+
+          <VideoPlayer
+            activeSpeakers={activeSpeakers}
+            isRecording={isRecording}
+            toggleMic={toggleMic}
+          />
+
 
 
         </div>
