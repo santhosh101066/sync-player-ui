@@ -224,10 +224,19 @@
     font-size: 1.1rem !important;
   }
 
-  /* HIDE BUTTON TEXT on Mobile */
+  /* HIDE BUTTON TEXT & LOGO TEXT on Mobile */
   .btn-text,
-  .volume-control span {
+  .volume-control span,
+  .logo-text,
+  .user-profile>div:last-child {
     display: none !important;
+  }
+
+  /* Reduce User Profile padding/border for mobile since text is gone */
+  .user-profile {
+    margin-right: 4px !important;
+    padding-right: 4px !important;
+    border-right: none !important;
   }
 
   /* Reset Mic Button size for mobile */

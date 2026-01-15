@@ -168,8 +168,7 @@ const AppContent: React.FC = () => {
           {/* GROUP 1: Primary (Visible to everyone, always on top row on mobile) */}
           <div className="header-primary">
             <div className="logo">
-              <span style={{ color: "var(--primary)", fontSize: "1.5rem" }}>▶</span>
-              SyncStream
+              <img src="/logo.svg" alt="App Logo" style={{ height: "32px", marginRight: "8px" }} />
             </div>
 
             {/* Spacer to push controls right on desktop, or managed via flex on mobile */}
