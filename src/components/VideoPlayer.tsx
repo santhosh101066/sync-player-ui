@@ -118,6 +118,8 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
 
   const [qualities, setQualities] = useState<any[]>([]);
   const [currentQuality, setCurrentQuality] = useState<number>(-1);
+  const [audioTracks, setAudioTracks] = useState<any[]>([]);
+  const [currentAudioTrack, setCurrentAudioTrack] = useState<number>(-1);
 
   // --- Helper: Direct CSS Update ---
   const updateSliderVisuals = (currentTime: number, maxDuration: number, buffered: number) => {
@@ -171,10 +173,22 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setQualities(hls.levels);
+          // setTimeout(() => {
+          //   setAudioTracks(hls.audioTracks);
+          //   setCurrentAudioTrack(hls.audioTrack);
+          // }, 500)
+
+
           if (isIntro) {
             video.loop = true;
             video.play().catch(() => { });
           }
+        });
+        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+          setAudioTracks(hls.audioTracks);
+          console.log(hls.audioTrack, "erwe");
+
+          setCurrentAudioTrack(hls.audioTrack + 1);
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl') || src) {
         video.src = src;
@@ -723,6 +737,29 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                         {currentQuality === i && <Check size={14} />}
                       </button>
                     ))}
+                    {audioTracks.length > 0 && (
+                      <>
+                        <div className="menu-divider"></div>
+                        <div className="audio-menu-header">Audio</div>
+                        {audioTracks.map((track, i) => (
+                          <button
+                            key={`audio-${i}`}
+                            className={`audio-track-item ${currentAudioTrack === i ? 'active' : ''}`}
+                            onClick={() => {
+                              if (hlsRef.current) {
+                                hlsRef.current.audioTrack = i;
+                                setCurrentAudioTrack(i);
+                                setShowSettingsMenu(false);
+                              }
+                            }}
+                          >
+                            {/* Prefer 'name', then 'lang', then fallback */}
+                            <span>{track.name || track.lang || `Track ${i + 1}`}</span>
+                            {currentAudioTrack === i && <Check size={14} />}
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </div>
                 )}
               </div>

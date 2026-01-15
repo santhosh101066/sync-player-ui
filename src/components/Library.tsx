@@ -31,7 +31,7 @@ export const Library: React.FC = () => {
     const playFile = (file: string) => {
         const url = `/downloads/${file}`;
         send({ type: 'load', url });
-        window.dispatchEvent(new CustomEvent('play-video', { detail: { url, autoPlay: true } }));
+        window.dispatchEvent(new CustomEvent('play-video', { detail: { url, autoPlay: false } }));
     };
 
     return (

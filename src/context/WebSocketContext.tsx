@@ -180,7 +180,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
                 setCurrentVideoState({
                     url: msg.url,
                     time: 0,
-                    paused: false,
+                    paused: true,
                     timestamp: Date.now()
                 });
             }
