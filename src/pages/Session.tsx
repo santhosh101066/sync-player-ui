@@ -22,6 +22,8 @@ import {
     Unlock,
     Lock,
     Globe,
+    Settings2,
+    X,
 } from "lucide-react";
 import "../App.css";
 import "../App.css";
@@ -82,6 +84,7 @@ export const Session: React.FC = () => {
 
     // 4. Form Inputs
     const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+    const [showMobileControls, setShowMobileControls] = useState(false);
     const [activeTab, setActiveTab] = useState<"chat" | "library" | "users">(
         "chat"
     );
@@ -144,173 +147,178 @@ export const Session: React.FC = () => {
             )}
 
             {audioBlocked && (
-                <div className="audio-blocked-toast" onClick={() => initAudio()}>
+                <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full z-50 shadow-lg flex items-center gap-3 cursor-pointer animate-in fade-in slide-in-from-top-4" onClick={() => initAudio()}>
                     <VolumeX size={20} strokeWidth={1.5} />
-                    <span style={{ fontWeight: 600 }}>
+                    <span className="font-semibold">
                         Audio is blocked! Click here to listen.
                     </span>
                 </div>
             )}
 
-            {/* --- Header --- */}
-            <div className="video-header">
-                <div className="controls">
-                    {/* GROUP 1: Primary (Visible to everyone, always on top row on mobile) */}
-                    <div className="header-primary">
-                        <div className="logo">
-                            <img src="/logo.svg" alt="App Logo" style={{ height: "32px", marginRight: "8px" }} />
-                        </div>
+            {/* --- Header (Unified Toolbar) --- */}
+            <div className="w-full h-16 px-3 md:px-6 flex items-center justify-between gap-4 bg-zinc-950/80 backdrop-blur-xl border-b border-white/5 z-50 relative">
 
-                        {/* Spacer to push controls right on desktop, or managed via flex on mobile */}
-                        <div className="header-spacer"></div>
+                {/* LEFT: Branding */}
+                <div className="flex items-center gap-6 shrink-0 z-10">
+                    <img src="/logo.svg" alt="App Logo" className="h-7 w-auto md:h-8 hover:scale-105 transition-transform cursor-pointer" />
+                </div>
 
-                        {/* User Profile */}
-                        <div className="user-profile" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '12px', paddingRight: '12px', borderRight: '1px solid var(--border)' }}>
-                            {userPicture ? (
-                                <img src={userPicture} alt="Profile" style={{ width: '28px', height: '28px', borderRadius: '50%', objectFit: 'cover' }} />
-                            ) : (
-                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                                    {nickname.charAt(0).toUpperCase()}
-                                </div>
-                            )}
-                            <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1 }}>
-                                <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{nickname}</span>
-                                {isAdmin && <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 500 }}>ADMIN</span>}
-                            </div>
-                        </div>
+                {/* CENTER: URL Input (Collapsible on Mobile & Tablet) */}
+                <div className={`flex-1 max-w-2xl px-4 flex justify-center transition-all duration-300 ${isAdmin ? (showMobileControls ? 'absolute top-16 left-0 w-full bg-zinc-950/90 p-4 border-b border-white/5 flex flex-col gap-3' : 'hidden lg:flex') : 'hidden lg:flex'}`}>
+                    {isAdmin ? (
+                        <>
+                            {/* Mobile Title (Only visible in mobile toggle view) */}
+                            <div className="lg:hidden text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Stream Settings</div>
 
-                        {/* Mic and Volume */}
-                        <div className="primary-controls">
-                            <button
-                                className={`main-mic-btn ${isRecording ? "recording" : "muted"}`}
-                                onClick={toggleMic}
-                                title={isRecording ? "Mute Microphone" : "Unmute Microphone"}
-                            >
-                                {isRecording ? (
-                                    <>
-                                        {" "}
-                                        <Mic size={18} className="pulse-anim" strokeWidth={1.5} /> <span className="btn-text">LIVE</span>{" "}
-                                    </>
-                                ) : (
-                                    <>
-                                        {" "}
-                                        <MicOff size={18} strokeWidth={1.5} />{" "}
-                                        <span className="btn-text">Muted</span>{" "}
-                                    </>
-                                )}
-                            </button>
-
-                            <div
-                                className="volume-control"
-                                style={{ gap: "10px", paddingRight: "0" }}
-                            >
-                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                    <Volume2
-                                        size={18}
-                                        color={volume === 0 ? "var(--danger)" : "var(--text-muted)"}
-                                        strokeWidth={1.5}
-                                    />
-                                    <span
-                                        style={{
-                                            fontSize: "0.75rem",
-                                            color: "var(--text-muted)",
-                                            fontWeight: 500,
-                                        }}
-                                        className="btn-text"
-                                    >
-                                        VOL
-                                    </span>
-                                </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="2"
-                                    step="0.1"
-                                    defaultValue="1"
-                                    onChange={(e) => setVolume(parseFloat(e.target.value))}
-                                    style={{
-                                        width: "80px",
-                                        background: `linear-gradient(to right, var(--primary) ${(volume / 2) * 100}%, var(--bg-dark) ${(volume / 2) * 100}%)`
-                                    }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* GROUP 2: Admin Tools (Second row on mobile) */}
-                    {isAdmin && (
-                        <div className="header-admin">
-                            <div className="input-group">
-                                <LinkIcon size={16} className="input-icon" strokeWidth={1.5} />
+                            <div className="w-full max-w-xl relative flex items-center gap-2 bg-white/5 border border-white/5 rounded-lg p-1.5 focus-within:bg-zinc-900 focus-within:border-indigo-500/50 transition-all">
+                                <LinkIcon size={16} className="text-zinc-500 ml-2" />
                                 <input
                                     type="text"
-                                    placeholder="Stream URL..."
+                                    placeholder="Paste stream URL..."
                                     value={urlInput}
                                     onChange={(e) => setUrlInput(e.target.value)}
+                                    className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder:text-zinc-600 font-medium h-full"
                                 />
-                            </div>
-                            <button onClick={handleManualLoad} title="Load URL">
-                                <RefreshCw size={16} strokeWidth={1.5} /> <span className="btn-text">Load</span>
-                            </button>
-
-                            <div className="admin-actions">
-                                <button className="primary" id="syncBtn" onClick={handleSync}>
-                                    <Zap size={16} strokeWidth={1.5} /> <span className="btn-text">Sync</span>
-                                </button>
                                 <button
-                                    onClick={toggleUserControls}
-                                    style={{
-                                        background: userControlsAllowed
-                                            ? "rgba(34, 197, 94, 0.1)"
-                                            : "rgba(239, 68, 68, 0.1)",
-                                        color: userControlsAllowed ? "#22c55e" : "#ef4444",
-                                        borderColor: userControlsAllowed ? "#22c55e" : "#ef4444",
-                                        minWidth: "40px",
-                                        padding: "0 8px",
-                                    }}
-                                    title={
-                                        userControlsAllowed
-                                            ? "Lock User Controls"
-                                            : "Unlock User Controls"
-                                    }
+                                    onClick={handleManualLoad}
+                                    className="px-3 h-8 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-md transition-colors flex items-center gap-2"
                                 >
-                                    {userControlsAllowed ? (
-                                        <Unlock size={18} strokeWidth={1.5} />
-                                    ) : (
-                                        <Lock size={18} strokeWidth={1.5} />
-                                    )}
-                                </button>
-                                <button
-                                    onClick={toggleProxy}
-                                    style={{
-                                        background: proxyEnabled
-                                            ? "rgba(34, 197, 94, 0.1)"
-                                            : "rgba(239, 68, 68, 0.1)",
-                                        color: proxyEnabled ? "#22c55e" : "#ef4444",
-                                        borderColor: proxyEnabled ? "#22c55e" : "#ef4444",
-                                        minWidth: "40px",
-                                        padding: "0 8px",
-                                    }}
-                                    title={
-                                        proxyEnabled
-                                            ? "Disable Stream Proxy"
-                                            : "Enable Stream Proxy"
-                                    }
-                                >
-                                    <Globe size={18} strokeWidth={1.5} />
-                                    <span className="btn-text">{proxyEnabled ? " ON" : " OFF"}</span>
-                                </button>
-
-                                <button
-                                    onClick={() => setShowAdminDashboard(true)}
-                                    className="btn-primary-outline"
-                                    title="Admin Dashboard"
-                                >
-                                    <Shield size={16} strokeWidth={1.5} />
+                                    <RefreshCw size={14} className={!urlInput ? "" : "animate-[spin_1s_ease-out]"} />
+                                    <span>LOAD</span>
                                 </button>
                             </div>
+
+                            {/* Mobile-only Controls Section (Rendered here for layout structure in toggle menu) */}
+                            {showMobileControls && (
+                                <div className="lg:hidden flex flex-col gap-4 mt-2">
+                                    <div className="h-px w-full bg-white/10" />
+
+                                    {/* Admin Controls Mobile */}
+                                    <div>
+                                        <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Admin Controls</div>
+                                        <div className="flex items-center justify-between gap-2">
+                                            <button onClick={handleSync} className="flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-amber-500 gap-2"><Zap size={18} /> Sync</button>
+                                            <button onClick={toggleUserControls} className={`flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 ${userControlsAllowed ? "text-green-400" : "text-red-400"}`}>
+                                                {userControlsAllowed ? <Unlock size={18} /> : <Lock size={18} />} Lock
+                                            </button>
+                                            <button onClick={toggleProxy} className={`flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 ${proxyEnabled ? "text-indigo-400" : "text-zinc-400"}`}>
+                                                <Globe size={18} /> Proxy
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Audio Controls Mobile */}
+                                    <div>
+                                        <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Audio</div>
+                                        <div className="flex items-center gap-3 bg-white/5 rounded-lg p-3">
+                                            <button onClick={toggleMic} className={`p-2 rounded-lg ${isRecording ? "bg-red-500 text-white" : "bg-white/10 text-zinc-400"}`}>
+                                                {isRecording ? <Mic size={18} /> : <MicOff size={18} />}
+                                            </button>
+                                            <div className="flex-1 flex items-center gap-2">
+                                                <Volume2 size={18} className="text-zinc-400" />
+                                                <div className="w-full h-8 flex items-center relative opacity-100">
+                                                    <input
+                                                        type="range"
+                                                        min="0"
+                                                        max="2"
+                                                        step="0.01"
+                                                        value={volume}
+                                                        onInput={(e) => setVolume(parseFloat(e.currentTarget.value))}
+                                                        className="absolute inset-0 w-full h-full opacity-0 z-[100] cursor-pointer"
+                                                    />
+                                                    <div className="w-full h-1 bg-white/30 !rounded-full relative cursor-pointer">
+                                                        <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 2) * 100}%` }} />
+                                                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 2) * 100}%` }} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <div className="hidden lg:flex items-center gap-2 text-white/20 text-sm font-medium select-none">
+                            <Lock size={14} />
+                            <span>Controls restricted to admin</span>
                         </div>
                     )}
+                </div>
+
+                {/* RIGHT: Desktop Controls & Profile */}
+                <div className="flex items-center gap-4 z-10">
+
+                    {/* Desktop Controls (Hidden on mobile & tablet) */}
+                    <div className="hidden lg:flex items-center gap-2">
+                        {isAdmin && (
+                            <>
+                                <button onClick={handleSync} className="hover:bg-white/10 p-2 rounded-lg text-zinc-400 hover:text-amber-500 transition-colors" title="Force Sync"><Zap size={18} /></button>
+                                <button onClick={toggleUserControls} className={`hover:bg-white/10 p-2 rounded-lg transition-colors ${userControlsAllowed ? "text-green-400" : "text-red-400"}`} title="Lock Controls">
+                                    {userControlsAllowed ? <Unlock size={18} /> : <Lock size={18} />}
+                                </button>
+                                <button onClick={toggleProxy} className={`hover:bg-white/10 p-2 rounded-lg transition-colors ${proxyEnabled ? "text-indigo-400" : "text-zinc-400 hover:text-white"}`} title="Proxy">
+                                    <Globe size={18} />
+                                </button>
+                                <div className="w-px h-6 bg-white/10 mx-1" />
+                            </>
+                        )}
+
+                        {/* Audio Desk */}
+                        <div className="flex items-center gap-2">
+                            <button onClick={toggleMic} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${isRecording ? "bg-red-500 text-white" : "hover:bg-white/10 text-zinc-400 hover:text-white"}`}>
+                                {isRecording ? <Mic size={16} className="animate-pulse" /> : <MicOff size={16} />}
+                                <span>{isRecording ? "LIVE" : "MUTE"}</span>
+                            </button>
+                            <div className="w-24 group flex items-center gap-2 p-1">
+                                <Volume2 size={16} className="text-zinc-400" />
+                                <div className="w-full h-8 flex items-center relative opacity-100">
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="2"
+                                        step="0.01"
+                                        value={volume}
+                                        onInput={(e) => setVolume(parseFloat(e.currentTarget.value))}
+                                        className="absolute inset-0 w-full h-full opacity-0 z-[100] cursor-pointer"
+                                    />
+                                    <div className="w-full h-1 bg-white/30 !rounded-full relative cursor-pointer">
+                                        <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 2) * 100}%` }} />
+                                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 2) * 100}%` }} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {isAdmin && (
+                            <>
+                                <div className="w-px h-6 bg-white/10 mx-1" />
+                                <button onClick={() => setShowAdminDashboard(true)} className="hover:bg-white/10 p-2 rounded-lg text-zinc-400 hover:text-white transition-colors" title="Dashboard">
+                                    <Shield size={18} />
+                                </button>
+                            </>
+                        )}
+                    </div>
+
+                    {/* Mobile Toggle */}
+                    <div className="lg:hidden">
+                        <button
+                            className="p-2 text-zinc-400 hover:text-white bg-white/5 rounded-lg"
+                            onClick={() => setShowMobileControls(!showMobileControls)}
+                        >
+                            {showMobileControls ? <X size={20} /> : <Settings2 size={20} />}
+                        </button>
+                    </div>
+
+                    {/* Profile */}
+                    <div className="flex items-center gap-3">
+                        {userPicture ? (
+                            <img src={userPicture} alt="Profile" className="w-8 h-8 rounded-full object-cover ring-2 ring-white/10" />
+                        ) : (
+                            <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center text-xs font-bold ring-2 ring-white/10">
+                                {nickname.charAt(0).toUpperCase()}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -353,14 +361,7 @@ export const Session: React.FC = () => {
                         </button>
                     </div>
 
-                    <div
-                        style={{
-                            flex: 1,
-                            overflow: "hidden",
-                            display: "flex",
-                            flexDirection: "column",
-                        }}
-                    >
+                    <div className="flex-1 overflow-hidden flex flex-col">
                         {activeTab === "chat" && <Chat />}
                         {activeTab === "library" && <Library />}
                         {activeTab === "users" && (
@@ -370,20 +371,8 @@ export const Session: React.FC = () => {
                 </div>
 
                 {/* CSS for specific animations kept minimal, assuming index.css handles most */}
+                {/* CSS for specific animations */}
                 <style>{`
-                    .audio-blocked-toast {
-                        position: fixed;
-                        top: 80px; left: 50%; transform: translateX(-50%);
-                        background: #ef4444; color: white; padding: 12px 24px;
-                        border-radius: 30px; z-index: 2000;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                        display: flex; align-items: center; gap: 12px;
-                        cursor: pointer; animation: slideDown 0.3s ease-out;
-                    }
-                    @keyframes slideDown { 
-                        from { transform: translate(-50%, -20px); opacity: 0; } 
-                        to { transform: translate(-50%, 0); opacity: 1; } 
-                    }
                     .pulse-anim { animation: pulse 1s infinite; }
                     @keyframes pulse { 
                         0% { opacity: 1; } 
@@ -394,6 +383,6 @@ export const Session: React.FC = () => {
             </div>
 
 
-        </div>
+        </div >
     );
 };

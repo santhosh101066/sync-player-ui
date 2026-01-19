@@ -25,9 +25,6 @@ import {
 } from "lucide-react";
 import { useWebSocket } from "../context/WebSocketContext";
 
-// Import the external CSS
-import "./VideoPlayer.css";
-
 interface VideoPlayerProps {
   activeSpeakers: string[];
   isRecording: boolean;
@@ -173,12 +170,6 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
 
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           setQualities(hls.levels);
-          // setTimeout(() => {
-          //   setAudioTracks(hls.audioTracks);
-          //   setCurrentAudioTrack(hls.audioTrack);
-          // }, 500)
-
-
           if (isIntro) {
             video.loop = true;
             video.play().catch(() => { });
@@ -186,8 +177,6 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
         });
         hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
           setAudioTracks(hls.audioTracks);
-          console.log(hls.audioTrack, "erwe");
-
           setCurrentAudioTrack(hls.audioTrack + 1);
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl') || src) {
@@ -255,18 +244,45 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     const onDurationChange = () => setDuration(video.duration);
 
     const onPlayEvent = () => {
+      // STRICT LOCK: If locked and not a remote update, force pause
+      if (!permissionsRef.current.isAdmin && !permissionsRef.current.userControlsAllowed && !isRemoteUpdate.current) {
+        video.pause();
+        return;
+      }
+
       setPaused(false);
       isSwitchingSource.current = false;
       if (!isRemoteUpdate.current && !isIntro) sendSync("sync", video.currentTime, false);
     };
 
     const onPauseEvent = () => {
+      // STRICT LOCK: If locked and not a remote update, force play (if it was playing)
+      if (!permissionsRef.current.isAdmin && !permissionsRef.current.userControlsAllowed && !isRemoteUpdate.current) {
+        // We can attempts to revert, but infinite loops are risky. 
+        // Generally, if they pause, they just desync. The auto-sync logic usually fixes it.
+        // But let's try to block the INTENT first via media session. 
+        // If we strictly force play here, it might fight the browser.
+        // Let's rely on the media session block first, but if that fails:
+        video.play().catch(() => { });
+        return;
+      }
+
       setPaused(true);
       if (isSwitchingSource.current) return;
       if (!isRemoteUpdate.current && !isIntro) sendSync("sync", video.currentTime, true);
     };
 
     const onSeeked = () => {
+      // STRICT LOCK: If locked and not remote, revert seek? 
+      // This is hard to revert perfectly without a "previous time" ref.
+      // But usually 'seeking' event happens first. 
+      // For now, let's just trigger a re-sync request if they drift too far?
+      // Actually, if we just sendSync, the server might overwrite us (which is good).
+      // But we don't want to SPAM the server with "I seeked!" if we are locked.
+      if (!permissionsRef.current.isAdmin && !permissionsRef.current.userControlsAllowed && !isRemoteUpdate.current) {
+        return; // Ignore sending sync
+      }
+
       updateSliderVisuals(video.currentTime, video.duration, 0);
       if (!isRemoteUpdate.current && !isIntro) sendSync("sync", video.currentTime, video.paused);
     };
@@ -343,6 +359,9 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
   };
 
   const toggleFullscreen = () => {
+    const { isAdmin, userControlsAllowed } = permissionsRef.current;
+    if (!isAdmin && !userControlsAllowed) return; // Block fullscreen if locked
+
     const el = document.querySelector('.video-player-root');
     if (!document.fullscreenElement) {
       el?.requestFullscreen().then(() => setFullscreen(true));
@@ -350,6 +369,61 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       document.exitFullscreen().then(() => setFullscreen(false));
     }
   };
+
+  // --- Strict Lock Enforcement (Keyboard & Media Keys) ---
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const { isAdmin, userControlsAllowed } = permissionsRef.current;
+      const isLocked = !isAdmin && !userControlsAllowed;
+
+      if (!isLocked) return;
+
+      // List of keys to block
+      const blockedKeys = [' ', 'k', 'j', 'l', 'm', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'f'];
+
+      if (blockedKeys.includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log(`Blocked restricted key: ${e.key}`);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, { capture: true }); // Capture phase to block early
+
+
+
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+    };
+  }, []);
+
+  // Effect to toggle Media Session handlers based on lock state
+  useEffect(() => {
+    const { isAdmin, userControlsAllowed } = permissionsRef.current;
+    const isLocked = !isAdmin && !userControlsAllowed;
+
+    if ('mediaSession' in navigator) {
+      const actions: MediaSessionAction[] = ['play', 'pause', 'seekbackward', 'seekforward', 'previoustrack', 'nexttrack', 'stop', 'seekto'];
+      if (isLocked) {
+        actions.forEach(action => {
+          try {
+            navigator.mediaSession.setActionHandler(action, () => {
+              console.log(`Media Session action blocked: ${action}`);
+            });
+          } catch (e) { }
+        });
+      } else {
+        // Reset to null to let browser handle or Video player default
+        actions.forEach(action => {
+          try {
+            navigator.mediaSession.setActionHandler(action, null);
+          } catch (e) { }
+        });
+      }
+    }
+  }, [isAdmin, userControlsAllowed]);
+
+
 
   // --- Load Logic ---
   const loadVideo = useCallback((url: string, autoPlay = false, startTime = 0) => {
@@ -400,7 +474,6 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     const { isAdmin, userControlsAllowed } = permissionsRef.current;
     if (isAdmin || userControlsAllowed) {
       send({ type: 'load', url: INTRO_URL });
-      // Force play state immediately after load (server defaults load to paused)
       setTimeout(() => {
         send({ type: 'forceSync', url: INTRO_URL, time: 0, paused: false });
       }, 200);
@@ -508,13 +581,11 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
 
   const isLocked = !isAdmin && !userControlsAllowed;
 
-  // -- Pre-calculate Volume Styles --
-  const volumePercent = (muted ? 0 : volume) * 100;
-  const volumeStyle = { '--slider-fill': `${volumePercent}%` } as React.CSSProperties;
+  // Note: style handled via inline in JSX now
 
   return (
     <div
-      className={`video-player-root ${isLocked ? "locked-mode" : ""}`}
+      className={`video-player-root relative w-full h-full bg-black shadow-2xl font-sans overflow-hidden group/root ${isLocked ? "pointer-events-none" : ""}`}
       onMouseMove={showControls}
       onClick={showControls}
       onMouseLeave={() => !paused && setControlsVisible(false)}
@@ -526,39 +597,41 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
          20: Speakers, Chat, Overlays, Controls (Must be > 6)
       */}
 
-      <canvas ref={canvasRef} className={`ambient-canvas ${ambientMode ? 'active' : ''}`} style={{ zIndex: 0 }} />
+      <canvas
+        ref={canvasRef}
+        className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full z-0 blur-[80px] saturate-[1.5] brightness-[0.8] transition-opacity duration-1000 pointer-events-none ${ambientMode ? 'opacity-60' : 'opacity-0'}`}
+        style={{ zIndex: 0 }}
+      />
 
       <video
         ref={videoRef}
-        className="media-player"
+        className="block w-full h-full object-contain relative z-[5]"
         playsInline
         crossOrigin="anonymous"
-        // onClick={togglePlay}
-        style={{ position: 'relative', zIndex: 5 }}
       />
 
       <div
-        className="gestures-layer"
+        className="absolute inset-0 z-[6] w-full h-full block"
         onDoubleClick={(e) => {
           e.stopPropagation();
           toggleFullscreen();
         }}
-        style={{ zIndex: 6 }}
+        style={{ pointerEvents: isLocked ? 'none' : 'auto' }}
       />
 
       {/* --- SPEAKERS (Now Visible on Top) --- */}
       {activeSpeakers.length > 0 && (
-        <div className="speaker-list" style={{ zIndex: 20 }}>
+        <div className="absolute top-[60px] right-5 flex flex-col items-end gap-2 z-20">
           {activeSpeakers.map((name, i) => (
-            <div key={i} className="speaker-pill">
-              <div className="speaker-icon-circle">
+            <div key={i} className="flex items-center gap-2 bg-green-500/40 border border-green-500/20 px-1 py-1 pr-2.5 rounded-full text-white text-sm font-medium shadow-sm animate-in fade-in zoom-in duration-300">
+              <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center shadow-[0_0_8px_rgba(34,197,94,0.4)]">
                 <Mic size={14} color="white" strokeWidth={1.5} />
               </div>
               <span>{name}</span>
               <div className="flex gap-[2px] h-3 items-end">
-                <div className="wave-bar" style={{ height: '60%', animationDelay: '0s' }}></div>
-                <div className="wave-bar" style={{ height: '100%', animationDelay: '0.1s' }}></div>
-                <div className="wave-bar" style={{ height: '50%', animationDelay: '0.2s' }}></div>
+                <div className="w-0.5 bg-white rounded-full animate-pulse h-[60%]" style={{ animationDelay: '0s' }}></div>
+                <div className="w-0.5 bg-white rounded-full animate-pulse h-full" style={{ animationDelay: '0.1s' }}></div>
+                <div className="w-0.5 bg-white rounded-full animate-pulse h-[50%]" style={{ animationDelay: '0.2s' }}></div>
               </div>
             </div>
           ))}
@@ -566,37 +639,37 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       )}
 
       {/* --- CHAT OVERLAY --- */}
-      <div className="vp-chat-container" style={{ zIndex: 20 }}>
+      <div className="absolute bottom-20 right-5 w-[280px] max-w-[70%] max-h-[60%] flex flex-col justify-end items-end gap-2 pointer-events-none z-20 [mask-image:linear-gradient(to_bottom,transparent,black_15%)]">
         {overlayChat.map((msg) => (
-          <div key={msg.id} className="vp-chat-bubble">
-            <span className="vp-chat-nick" style={{ color: msg.color }}>{msg.nick}</span>
-            <span className="vp-chat-text">{msg.text}</span>
+          <div key={msg.id} className="bg-[#141414]/60 backdrop-blur-[4px] border border-white/10 py-1.5 px-3 rounded-[12px_12px_2px_12px] text-zinc-200 text-sm shadow-sm animate-in slide-in-from-right-5 duration-200 max-w-full break-words">
+            <span className="font-semibold text-xs mr-1.5 uppercase opacity-90" style={{ color: msg.color }}>{msg.nick}</span>
+            <span className="text-white">{msg.text}</span>
           </div>
         ))}
       </div>
 
       {/* --- STATUS OVERLAY --- */}
-      <div className="overlays-layer" style={{ zIndex: 20 }}>
-        <div className={`live-status-indicator ${!isConnected ? "offline" : ""}`}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "currentColor" }} />
+      <div className={`absolute inset-0 z-20 pointer-events-none transition-opacity duration-300 ${controlsVisible || paused ? 'opacity-100' : 'opacity-0'} group-hover/root:opacity-100`}>
+        <div className={`absolute top-5 right-5 px-3 py-1.5 rounded-full text-sm flex items-center gap-1.5 shadow-sm ${!isConnected ? "bg-red-500/20 border border-red-500 text-red-500" : "bg-green-500/20 border border-green-500 text-green-500"}`}>
+          <div className="w-2 h-2 rounded-full bg-current" />
           {isConnected ? "Live" : "Offline"}
         </div>
         {isLocked && (
-          <div className="lock-indicator">
+          <div className="absolute top-6 left-6 text-white/40 p-1 flex items-center justify-center">
             <Lock size={16} strokeWidth={1.5} />
           </div>
         )}
       </div>
 
       {/* --- CONTROLS --- */}
-      <div className="controls-layer" data-visible={controlsVisible || paused} style={{ zIndex: 20 }}>
-        <div className="controls-gradient">
+      <div className={`absolute inset-0 z-30 flex flex-col justify-end pointer-events-none transition-opacity duration-300 ${controlsVisible || paused ? 'opacity-100' : 'opacity-0'}`} data-visible={controlsVisible || paused}>
+        <div className="bg-gradient-to-t from-black/90 via-black/50 to-transparent px-6 pb-5 flex flex-col gap-3 pointer-events-auto max-[900px]:px-3 max-[900px]:pb-2.5 max-[900px]:gap-1.5">
 
           {/* TIME SLIDER (Optimized Ref) */}
-          <div style={{ width: '100%', position: 'relative', height: '14px', marginBottom: '8px' }}>
+          <div className="w-full relative h-3.5 mb-2 max-[900px]:h-3 max-[900px]:mb-0.5">
             <div
               ref={timeSliderRef}
-              className="time-slider group"
+              className="w-full h-5 flex items-center cursor-pointer relative group/slider max-[900px]:h-3"
               style={{
                 pointerEvents: isLocked ? 'none' : 'auto',
                 opacity: isLocked ? 0.5 : 1,
@@ -610,28 +683,24 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                 step="0.1"
                 defaultValue="0"
                 onInput={handleSeek}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  opacity: 0,
-                  zIndex: 20,
-                  cursor: 'pointer'
-                }}
+                className="absolute inset-0 w-full h-full opacity-0 z-20 cursor-pointer"
               />
-              <div className="time-slider-track">
-                <div className="time-slider-fill" />
-                <div className="time-slider-progress" />
-                <div className="time-slider-thumb" />
+              <div className="w-full h-1 bg-white/30 !rounded-full relative group-hover/slider:h-1.5 transition-all max-[900px]:h-[3px]">
+                {/* Fill */}
+                <div className="absolute left-0 top-0 h-full bg-[var(--primary)] !rounded-full z-[2] w-[var(--slider-fill,0%)] pointer-events-none" />
+                {/* Buffer */}
+                <div className="absolute left-0 top-0 h-full bg-white/50 !rounded-full z-[1] w-[var(--slider-progress,0%)] pointer-events-none" />
+                {/* Thumb */}
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-white !rounded-full shadow-md z-[3] pointer-events-none transition-transform group-hover/slider:scale-125 left-[var(--slider-fill)] max-[900px]:w-2.5 max-[900px]:h-2.5" />
               </div>
             </div>
           </div>
 
-          <div className="buttons-row">
-            <div className="control-group">
+          <div className="flex items-center justify-between w-full mt-1 max-[900px]:mt-0.5">
+            <div className="flex items-center gap-3 max-[900px]:gap-2">
+              {/* PLAY */}
               <button
-                className="control-btn play-btn"
+                className="vp-control-btn vp-play-btn w-10 h-10 flex items-center justify-center shrink-0 max-[900px]:w-7 max-[900px]:h-7"
                 onClick={togglePlay}
                 title={isLocked ? "Controls Locked" : (paused ? "Play" : "Pause")}
                 style={{
@@ -641,15 +710,16 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                 disabled={isLocked}
               >
                 {paused ? (
-                  <Play className="play-icon" strokeWidth={1.5} />
+                  <Play className="w-5 h-5 fill-white text-white max-[900px]:w-3.5 max-[900px]:h-3.5" strokeWidth={1.5} />
                 ) : (
-                  <Pause className="pause-icon" strokeWidth={1.5} />
+                  <Pause className="w-5 h-5 fill-white text-white max-[900px]:w-3.5 max-[900px]:h-3.5" strokeWidth={1.5} />
                 )}
               </button>
 
-              <div className="volume-group" style={{ position: 'relative' }}>
+              {/* VOLUME */}
+              <div className="flex items-center gap-2 relative max-[900px]:gap-1">
                 <button
-                  className="control-btn volume-btn"
+                  className="vp-control-btn w-8 h-8 text-zinc-200 hover:text-white max-[900px]:w-7 max-[900px]:h-7"
                   onClick={() => {
                     if (videoRef.current) {
                       videoRef.current.muted = !muted;
@@ -659,67 +729,59 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                   title={muted ? "Unmute" : "Mute"}
                 >
                   {muted || volume === 0 ? (
-                    <VolumeX className="mute-icon" strokeWidth={1.5} />
+                    <VolumeX className="w-5 h-5 max-[900px]:w-4 max-[900px]:h-4" strokeWidth={1.5} />
                   ) : volume < 0.5 ? (
-                    <Volume1 className="vol-low-icon" strokeWidth={1.5} />
+                    <Volume1 className="w-5 h-5 max-[900px]:w-4 max-[900px]:h-4" strokeWidth={1.5} />
                   ) : (
-                    <Volume2 className="vol-high-icon" strokeWidth={1.5} />
+                    <Volume2 className="w-5 h-5 max-[900px]:w-4 max-[900px]:h-4" strokeWidth={1.5} />
                   )}
                 </button>
-                <div className="volume-slider-container" style={{ ...volumeStyle, width: '80px' }}>
+                <div className="w-20 h-8 flex items-center relative opacity-100 max-[900px]:w-9">
                   <input
                     type="range"
                     min="0" max="1" step="0.05"
                     value={muted ? 0 : volume}
                     onInput={handleVolume}
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      width: '100%',
-                      height: '100%',
-                      opacity: 0,
-                      zIndex: 20,
-                      cursor: 'pointer'
-                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 z-50 cursor-pointer appearance-none"
                   />
-                  <div className="volume-track">
-                    <div className="volume-fill" />
-                    <div className="volume-thumb" />
+                  <div className="w-full h-1 bg-white/30 !rounded-full relative cursor-pointer">
+                    <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(muted ? 0 : volume) * 100}%` }} />
+                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(muted ? 0 : volume) * 100}%` }} />
                   </div>
                 </div>
               </div>
 
-              <div className="time-display">
+              <div className="flex gap-1 font-mono text-sm text-zinc-300 pointer-events-none ml-2 max-[900px]:text-xs max-[900px]:ml-1">
                 <span>{formatTime(displayTime)}</span>
-                <span className="time-divider">/</span>
+                <span className="opacity-50">/</span>
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
 
-            <div className="control-group">
+            <div className="flex items-center gap-3 max-[900px]:gap-0.5">
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); toggleMic(); }}
                 title={isRecording ? "Mute Mic" : "Unmute Mic"}
-                className={`control-btn mic-btn ${isRecording ? 'recording' : ''}`}
+                className={`vp-control-btn w-8 h-8 max-[900px]:w-7 max-[900px]:h-7 ${isRecording ? 'active-mic animate-pulse' : 'text-zinc-200 hover:text-white'}`}
               >
-                {isRecording ? <Mic size={32} strokeWidth={1.5} /> : <MicOff size={32} strokeWidth={1.5} />}
+                {isRecording ? <Mic size={20} strokeWidth={1.5} className="max-[900px]:w-4 max-[900px]:h-4" /> : <MicOff size={20} strokeWidth={1.5} className="max-[900px]:w-4 max-[900px]:h-4" />}
               </button>
 
               <div className="relative">
                 <button
-                  className={`control-btn settings-btn ${showSettingsMenu ? 'active' : ''}`}
+                  className={`vp-control-btn w-8 h-8 max-[900px]:w-7 max-[900px]:h-7 ${showSettingsMenu ? 'active-settings' : 'text-zinc-200 hover:text-white'}`}
                   onClick={() => setShowSettingsMenu(!showSettingsMenu)}
                   title="Settings"
                 >
-                  <Settings strokeWidth={1.5} />
+                  <Settings strokeWidth={1.5} className="w-5 h-5 max-[900px]:w-4 max-[900px]:h-4" />
                 </button>
 
                 {showSettingsMenu && (
-                  <div className="audio-menu settings-menu" ref={settingsRef}>
-                    <div className="audio-menu-header">Quality</div>
+                  <div className="absolute bottom-full right-0 w-40 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl p-1 flex flex-col gap-1 shadow-2xl z-50 mb-3 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-bottom-right" ref={settingsRef}>
+                    <div className="text-[10px] font-bold text-zinc-500 uppercase px-3 py-2 tracking-wider">Quality</div>
                     <button
-                      className={`audio-track-item ${currentQuality === -1 ? 'active' : ''}`}
+                      className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-all text-left ${currentQuality === -1 ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
                       onClick={() => {
                         if (hlsRef.current) hlsRef.current.currentLevel = -1;
                         setCurrentQuality(-1);
@@ -732,7 +794,7 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                     {qualities.map((q, i) => (
                       <button
                         key={i}
-                        className={`audio-track-item ${currentQuality === i ? 'active' : ''}`}
+                        className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-all text-left ${currentQuality === i ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
                         onClick={() => {
                           if (hlsRef.current) hlsRef.current.currentLevel = i;
                           setCurrentQuality(i);
@@ -745,12 +807,12 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                     ))}
                     {audioTracks.length > 0 && (
                       <>
-                        <div className="menu-divider"></div>
-                        <div className="audio-menu-header">Audio</div>
+                        <div className="h-px bg-white/5 mx-2 my-1"></div>
+                        <div className="text-[10px] font-bold text-zinc-500 uppercase px-3 py-2 tracking-wider">Audio</div>
                         {audioTracks.map((track, i) => (
                           <button
                             key={`audio-${i}`}
-                            className={`audio-track-item ${currentAudioTrack === i ? 'active' : ''}`}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-all text-left ${currentAudioTrack === i ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
                             onClick={() => {
                               if (hlsRef.current) {
                                 hlsRef.current.audioTrack = i;
@@ -759,7 +821,6 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                               }
                             }}
                           >
-                            {/* Prefer 'name', then 'lang', then fallback */}
                             <span>{track.name || track.lang || `Track ${i + 1}`}</span>
                             {currentAudioTrack === i && <Check size={14} />}
                           </button>
@@ -771,32 +832,32 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
               </div>
 
               <button
-                className={`control-btn ${ambientMode ? 'active-glow' : ''}`}
+                className={`vp-control-btn w-8 h-8 max-[900px]:w-7 max-[900px]:h-7 ${ambientMode ? 'active-ambient' : 'text-zinc-200 hover:text-white'}`}
                 onClick={() => setAmbientMode(!ambientMode)}
                 title="Toggle Ambient Mode"
               >
-                <Lightbulb size={20} strokeWidth={1.5} className={ambientMode ? "fill-current text-yellow-400" : ""} />
+                <Lightbulb size={20} strokeWidth={1.5} className={`w-5 h-5 max-[900px]:w-4 max-[900px]:h-4 ${ambientMode ? "fill-current" : ""}`} />
               </button>
 
               {!isLocked && (
                 <button
-                  className={`control-btn ${isIntro ? 'active-glow' : ''}`}
+                  className={`vp-control-btn w-8 h-8 max-[900px]:w-7 max-[900px]:h-7 ${isIntro ? 'active-ambient' : 'text-zinc-200 hover:text-white'}`}
                   onClick={handlePlayIntro}
                   title="Play Intro Loop"
                 >
-                  <Sparkles size={20} strokeWidth={1.5} />
+                  <Sparkles size={20} strokeWidth={1.5} className="w-5 h-5 max-[900px]:w-4 max-[900px]:h-4" />
                 </button>
               )}
 
               <button
-                className="control-btn fs-btn"
+                className="vp-control-btn w-8 h-8 text-zinc-200 hover:text-white max-[900px]:w-7 max-[900px]:h-7"
                 onClick={toggleFullscreen}
                 title={fullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
               >
                 {fullscreen ? (
-                  <Minimize className="minimize-icon" strokeWidth={1.5} />
+                  <Minimize className="w-5 h-5 max-[900px]:w-4 max-[900px]:h-4" strokeWidth={1.5} />
                 ) : (
-                  <Maximize className="maximize-icon" strokeWidth={1.5} />
+                  <Maximize className="w-5 h-5 max-[900px]:w-4 max-[900px]:h-4" strokeWidth={1.5} />
                 )}
               </button>
             </div>

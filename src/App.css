@@ -295,68 +295,87 @@
   }
 }
 
+/* Removed specific volume-control slider styles in favor of Global Slider Styles below */
+/* Dynamic Dock Button Styles */
+.dock-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  /* rounded-full */
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+
+.dock-btn:hover {
+  transform: scale(1.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.dock-btn:active {
+  transform: scale(0.95);
+}
+
+
 /* =========================================
-   VOLUME SLIDER CUSTOM STYLES
+   VOLUME SLIDER STYLES (Specific)
    ========================================= */
-.volume-control input[type="range"] {
+
+/* --- WebKit Thumb --- */
+.volume-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  background: transparent;
-  /* Inline style handles gradient */
-  height: 6px;
-  border-radius: 3px;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
   cursor: pointer;
-  outline: none;
-}
-
-/* Thumb Styling */
-.volume-control input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  background: #ffffff;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   margin-top: -4px;
-  /* Center on track (6px track, 14px thumb -> (6-14)/2 = -4) */
-  transition: transform 0.1s ease;
-}
-
-.volume-control input[type="range"]::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: #ffffff;
+  /* (TrackHeight 4px - ThumbHeight 12px) / 2 = -4px */
   border: none;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform 0.1s ease;
 }
 
-.volume-control input[type="range"]:active::-webkit-slider-thumb {
+.volume-slider:active::-webkit-slider-thumb {
   transform: scale(1.2);
 }
 
-/* Track Styling (Webkit only, others use background on input) */
-.volume-control input[type="range"]::-webkit-slider-runnable-track {
+/* --- WebKit Track --- */
+.volume-slider::-webkit-slider-runnable-track {
   width: 100%;
-  height: 6px;
+  height: 4px;
   cursor: pointer;
-  border-radius: 3px;
-  /* Background handled by inline style on input */
+  background: transparent;
+  /* Handled by inline gradient */
+  border-radius: 2px;
+  border: none;
 }
 
-/* Mobile Styling Update */
-@media (max-width: 900px) {
-  .volume-control input[type="range"] {
-    height: 8px !important;
-    /* Slightly taller for touch */
-  }
+/* --- Firefox Thumb --- */
+.volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
 
-  .volume-control input[type="range"]::-webkit-slider-thumb {
-    /* width: 16px !important; */
-    height: 16px !important;
-    margin-top: -4px !important;
-    /* (8-16)/2 = -4 */
-  }
+.volume-slider:active::-moz-range-thumb {
+  transform: scale(1.2);
+}
+
+/* --- Firefox Track --- */
+.volume-slider::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: transparent;
+  border-radius: 2px;
+  border: none;
 }

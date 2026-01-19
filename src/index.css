@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   /* Glassmorphism Variables */
   --bg-dark: rgba(9, 9, 11, 0.6);
@@ -749,4 +751,65 @@ button.recording {
   content: '\f110';
   /* Video.js specific cog icon */
   font-family: VideoJS;
+}
+
+/* --- VIDEO PLAYER CONTROLS RESET --- */
+.vp-control-btn {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+  /* Reset global button constraints but allow Tailwind height/width overrides */
+  /* height: auto; <--- REMOVED to let h-8 work */
+  min-height: 0 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+
+  padding: 0 !important;
+  border-radius: 9999px !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease !important;
+  line-height: 1 !important;
+}
+
+.vp-control-btn:hover {
+  background: transparent !important;
+  transform: scale(1.1) !important;
+  box-shadow: none !important;
+  color: white !important;
+}
+
+.vp-control-btn:active {
+  transform: scale(0.95) !important;
+}
+
+/* Exception for Play Button (keep circle bg) */
+.vp-play-btn {
+  background: rgba(255, 255, 255, 0.15) !important;
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.vp-play-btn:hover {
+  background: rgba(255, 255, 255, 0.3) !important;
+  transform: scale(1.05) !important;
+}
+
+/* Specific Active States Overrides */
+
+/* --- HEADER BUTTON OVERRIDE --- */
+.header-btn {
+  height: auto !important;
+  min-width: 0 !important;
+  width: auto !important;
+  /* Let Tailwind height/width take precedence */
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  display: inline-flex !important;
+  /* Allow flex centering inside */
 }

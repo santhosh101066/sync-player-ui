@@ -99,7 +99,7 @@ export const Chat: React.FC = () => {
     return (
         <div className="chat-section">
             <div className="chat-messages">
-                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9em', margin: '20px 0' }}>
+                <div className="text-center text-zinc-500 text-sm my-5">
                     👋 Welcome to the session
                 </div>
 
@@ -107,13 +107,7 @@ export const Chat: React.FC = () => {
                     // --- HANDLE SYSTEM MESSAGES ---
                     if (msg.isSystem) {
                         return (
-                            <div key={i} style={{
-                                textAlign: 'center',
-                                fontSize: '0.8rem',
-                                color: 'var(--text-muted)',
-                                margin: '8px 0',
-                                fontStyle: 'italic'
-                            }}>
+                            <div key={i} className="text-center text-xs text-white/60 my-2 italic">
                                 {msg.text}
                             </div>
                         );
@@ -125,35 +119,44 @@ export const Chat: React.FC = () => {
                     const isSequence = prevMsg && !prevMsg.isSystem && prevMsg.nick === msg.nick;
 
                     return (
-                        <div key={i} className="chat-msg" style={{
-                            flexDirection: isMe ? 'row-reverse' : 'row',
-                            marginTop: isSequence ? '2px' : '12px'
-                        }}>
-                            <div className="chat-avatar" style={{ visibility: isSequence ? 'hidden' : 'visible' }}>
+                        <div key={i} className={`flex gap-3 px-2 ${isMe ? 'flex-row-reverse' : 'flex-row'} ${isSequence ? 'mt-0.5' : 'mt-3'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                            <div className={`w-8 h-8 flex-shrink-0 ${isSequence ? 'invisible' : 'visible'}`}>
                                 {msg.picture ? (
-                                    <img src={msg.picture} alt={msg.nick.charAt(0)} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                                    <img src={msg.picture} alt={msg.nick.charAt(0)} className="w-full h-full rounded-full object-cover shadow-sm bg-zinc-800" />
                                 ) : (
-                                    msg.nick.charAt(0).toUpperCase()
-                                )}
-                            </div>
-                            <div className="chat-content" style={{ alignItems: isMe ? 'flex-end' : 'flex-start', display: 'flex', flexDirection: 'column' }}>
-                                {!isSequence && (
-                                    <div className="chat-author">
-                                        {isMe ? 'You' : msg.nick} {msg.isAdmin && <span style={{ color: 'var(--primary)', fontSize: '0.7em', border: '1px solid var(--primary)', padding: '0 4px', borderRadius: '4px' }}>ADMIN</span>}
+                                    <div className="w-full h-full rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-sm">
+                                        {msg.nick.charAt(0).toUpperCase()}
                                     </div>
                                 )}
-                                <div className="chat-text" style={{
-                                    background: isMe ? 'var(--primary)' : 'var(--bg-element)',
-                                    color: isMe ? 'white' : 'var(--text-main)',
-                                    borderRadius: isMe
-                                        ? (isSequence ? '12px 12px 12px 12px' : '12px 4px 12px 12px')
-                                        : (isSequence ? '12px 12px 12px 12px' : '4px 12px 12px 12px')
-                                }}>
+                            </div>
+                            <div className={`flex flex-col max-w-[80%] ${isMe ? 'items-end' : 'items-start'}`}>
+                                {!isSequence && (
+                                    <div className="text-xs text-white/50 mb-1 flex items-center gap-1.5 px-1">
+                                        {isMe ? 'You' : msg.nick}
+                                        {msg.isAdmin && (
+                                            <span className="text-[0.6rem] text-primary border border-primary/30 bg-primary/10 px-1 rounded uppercase font-bold tracking-wider">
+                                                ADMIN
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                                <div
+                                    className={`px-3.5 py-2.5 shadow-md break-words text-sm
+                                        ${isMe
+                                            ? 'bg-violet-500 text-white'
+                                            : 'bg-white/10 text-gray-100'
+                                        }
+                                        ${isMe
+                                            ? (isSequence ? 'rounded-2xl rounded-tr-md' : 'rounded-2xl rounded-tr-sm')
+                                            : (isSequence ? 'rounded-2xl rounded-tl-md' : 'rounded-2xl rounded-tl-sm')
+                                        }
+                                    `}
+                                >
                                     {msg.image ? (
                                         <img
                                             src={msg.image}
                                             alt="Shared"
-                                            style={{ maxWidth: '200px', maxHeight: '200px', cursor: 'pointer', borderRadius: '4px' }}
+                                            className="max-w-[200px] max-h-[200px] cursor-pointer rounded-md hover:brightness-110 transition-all border border-black/10"
                                             onClick={() => setSelectedImage(msg.image || null)}
                                         />
                                     ) : msg.text}
@@ -165,46 +168,39 @@ export const Chat: React.FC = () => {
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className="chat-input-area">
+            <div className="p-4 border-t border-white/10 bg-black/20 flex gap-2.5 backdrop-blur-sm">
                 <input
                     type="text"
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent transition-all"
                     placeholder="Type a message... (Paste images supported)"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onPaste={handlePaste}
                     onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                    style={{ flex: 1 }}
                 />
-                <button onClick={sendMessage} className="primary" style={{ padding: '8px 12px' }}>
+                <button onClick={sendMessage} className="p-2.5 bg-primary hover:bg-primary-hover text-white rounded-xl transition-colors shadow-lg shadow-primary/20 flex items-center justify-center">
                     <Send size={18} />
                 </button>
             </div>
 
             {/* LIGHTBOX / POPUP - PORTAL */}
             {selectedImage && createPortal(
-                <div style={{
-                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 99999,
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    userSelect: 'none'
-                }}
+                <div
+                    className="fixed inset-0 bg-black/95 z-[99999] flex flex-col items-center justify-center select-none animate-in fade-in duration-200"
                     onClick={closeLightbox}
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
                 >
-                    <div style={{
-                        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        overflow: 'hidden', width: '100%', cursor: zoomLevel > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'
-                    }}
+                    <div
+                        className={`flex-1 flex items-center justify-center overflow-hidden w-full ${zoomLevel > 1 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'}`}
                         onMouseDown={handleMouseDown}
                     >
                         <img
                             src={selectedImage}
                             alt="Fullscreen"
+                            className="max-w-[90%] max-h-[90%] rounded-lg shadow-2xl"
                             style={{
-                                maxWidth: '90%',
-                                maxHeight: '90%',
-                                borderRadius: '8px',
                                 transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoomLevel})`,
                                 transition: isDragging ? 'none' : 'transform 0.2s ease-out',
                                 pointerEvents: 'auto'
@@ -215,27 +211,20 @@ export const Chat: React.FC = () => {
                     </div>
 
                     {/* Toolbar */}
-                    <div style={{
-                        position: 'absolute', bottom: 24,
-                        background: 'rgba(20, 20, 20, 0.85)',
-                        backdropFilter: 'blur(12px)',
-                        padding: '8px 16px',
-                        borderRadius: '100px',
-                        display: 'flex', alignItems: 'center', gap: '16px',
-                        border: '1px solid rgba(255,255,255,0.1)',
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                        pointerEvents: 'auto'
-                    }} onClick={(e) => e.stopPropagation()}>
-                        <button onClick={() => { setZoomLevel(z => Math.max(0.5, z - 0.5)); setPan({ x: 0, y: 0 }); }} title="Zoom Out" style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', padding: 4 }}>
+                    <div
+                        className="absolute bottom-6 bg-zinc-900/85 backdrop-blur-xl px-4 py-2 rounded-full flex items-center gap-4 border border-white/10 shadow-2xl pointer-events-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button onClick={() => { setZoomLevel(z => Math.max(0.5, z - 0.5)); setPan({ x: 0, y: 0 }); }} title="Zoom Out" className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded transition-colors">
                             <ZoomOut size={18} />
                         </button>
-                        <span style={{ minWidth: '36px', textAlign: 'center', color: '#e0e0e0', fontSize: '0.85rem', fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
+                        <span className="min-w-[36px] text-center text-zinc-300 text-sm font-medium tabular-nums">
                             {Math.round(zoomLevel * 100)}%
                         </span>
-                        <button onClick={() => setZoomLevel(z => Math.min(4, z + 0.5))} title="Zoom In" style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', padding: 4 }}>
+                        <button onClick={() => setZoomLevel(z => Math.min(4, z + 0.5))} title="Zoom In" className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded transition-colors">
                             <ZoomIn size={18} />
                         </button>
-                        <div style={{ width: 1, height: '16px', background: 'rgba(255,255,255,0.2)' }}></div>
+                        <div className="w-px h-4 bg-white/20"></div>
                         <button onClick={() => {
                             const link = document.createElement('a');
                             link.href = selectedImage;
@@ -243,17 +232,15 @@ export const Chat: React.FC = () => {
                             document.body.appendChild(link);
                             link.click();
                             document.body.removeChild(link);
-                        }} title="Download" style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', padding: 4 }}>
+                        }} title="Download" className="p-1 text-white/80 hover:text-white hover:bg-white/10 rounded transition-colors">
                             <Download size={18} />
                         </button>
                     </div>
 
-                    <button style={{
-                        position: 'absolute', top: 20, right: 20,
-                        background: 'transparent', border: 'none', color: 'white', cursor: 'pointer',
-                        padding: '10px',
-                        pointerEvents: 'auto'
-                    }} onClick={closeLightbox}>
+                    <button
+                        className="absolute top-5 right-5 text-white/70 hover:text-white hover:bg-white/10 p-2 rounded-full transition-all pointer-events-auto"
+                        onClick={closeLightbox}
+                    >
                         <X size={32} />
                     </button>
                 </div>,

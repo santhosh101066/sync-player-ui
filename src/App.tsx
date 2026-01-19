@@ -5,6 +5,7 @@ import { Login } from './pages/Login';
 import { TermsAndPolicy } from './pages/Terms';
 import { PrivacyPolicy } from './pages/Privacy';
 import { About } from './pages/About';
+import { NotFound } from './pages/NotFound';
 import './App.css';
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
           <Route path="/terms" element={<TermsAndPolicy />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/about" element={<About />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>
     </WebSocketProvider>

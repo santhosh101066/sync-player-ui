@@ -15,43 +15,26 @@ export const Login: React.FC = () => {
     }, [isConnected, navigate]);
 
     return (
-        <div style={{
-            height: '100vh',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            background: 'var(--bg-dark)',
-            color: 'white'
-        }}>
-            <div className="login-card" style={{
-                background: 'var(--bg-card)',
-                padding: '40px',
-                borderRadius: '24px',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                textAlign: 'center',
-                border: '1px solid var(--border)',
-                maxWidth: '400px',
-                width: '90%'
-            }}>
-                <div style={{ marginBottom: '30px' }}>
-                    <img src="/logo.svg" alt="SyncPlayer" style={{ height: '60px' }} />
-                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+        <div className="h-screen flex flex-col justify-center items-center bg-zinc-950 text-white relative overflow-hidden">
+            {/* Background Gradients to match the index.css feel */}
+            <div className="absolute inset-0 z-0 pointer-events-none">
+                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 rounded-full blur-[100px]" />
+                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-900/20 rounded-full blur-[100px]" />
+            </div>
+
+            <div className="relative z-10 bg-zinc-900/60 backdrop-blur-xl p-10 rounded-3xl shadow-2xl text-center border border-white/10 max-w-sm w-[90%] flex flex-col gap-6">
+                <div>
+                    <img src="/logo.svg" alt="SyncPlayer" className="h-16 mx-auto mb-3" />
+                    <p className="text-white/60 text-sm">
                         Watch together, synchronized.
                     </p>
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div className="flex justify-center">
                     <GoogleLogin
                         onSuccess={credentialResponse => {
                             if (credentialResponse.credential) {
                                 connect(credentialResponse.credential);
-                                // session will handle audio init requirement likely, 
-                                // or we rely on user clicking something else later. 
-                                // But usually we need to unlock audio contexts.
-                                // In the modal version it called initAudio(). 
-                                // We can't easily import hook logic here outside provider context if logic isn't in context.
-                                // Let's check useAudio usage. 
                             }
                         }}
                         onError={() => {
@@ -62,10 +45,10 @@ export const Login: React.FC = () => {
                     />
                 </div>
 
-                <div style={{ marginTop: '30px', borderTop: '1px solid var(--border)', paddingTop: '20px', display: 'flex', gap: '15px', justifyContent: 'center', fontSize: '0.8rem' }}>
-                    <Link to="/about" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>About</Link>
-                    <Link to="/terms" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Terms</Link>
-                    <Link to="/privacy" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Privacy</Link>
+                <div className="pt-6 border-t border-white/10 flex gap-4 justify-center text-xs text-white/40 font-medium">
+                    <Link to="/about" className="hover:text-white transition-colors">About</Link>
+                    <Link to="/terms" className="hover:text-white transition-colors">Terms</Link>
+                    <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
                 </div>
             </div>
         </div>
