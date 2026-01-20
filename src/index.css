@@ -797,19 +797,63 @@ button.recording {
   transform: scale(1.05) !important;
 }
 
-/* Specific Active States Overrides */
+/* --- CAPTIONS CUSTOMIZATION --- */
+video::cue {
+  font-size: 0.95rem;
+  /* Reduced from default */
+  background-color: rgba(0, 0, 0, 0.65) !important;
+  /* Semi-transparent bg */
+  color: #fff !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+  /* Optional: Font tweaks */
+  font-family: inherit;
+  transition: transform 0.3s ease;
+  /* line-height: 1; */
+  /* Reset line height */
+}
 
-/* --- HEADER BUTTON OVERRIDE --- */
-.header-btn {
-  height: auto !important;
-  min-width: 0 !important;
-  width: auto !important;
-  /* Let Tailwind height/width take precedence */
-  padding: 0 !important;
-  margin: 0 !important;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  display: inline-flex !important;
-  /* Allow flex centering inside */
+/* Container Transition */
+video::-webkit-media-text-track-container {
+  transition: transform 0.3s ease-out;
+}
+
+/* Shift captions up when controls are active */
+.controls-active video::-webkit-media-text-track-container {
+  transform: translateY(-80px) !important;
+}
+
+.controls-active video::cue {
+  /* No transform support usually */
+}
+
+/* --- VIDEO.JS OVERRIDES --- */
+.video-js .vjs-big-play-button {
+  display: none !important;
+}
+
+.video-js .vjs-control-bar {
+  display: none !important;
+}
+
+.video-js {
+  background-color: transparent !important;
+}
+
+.video-js .vjs-tech {
+  object-fit: contain;
+}
+
+/* Adjust captions position and size */
+.vjs-text-track-display {
+  bottom: 30px !important;
+  transition: bottom 0.3s ease;
+}
+
+.vjs-text-track-display>div>div>div {
+  font-size: 0.7em !important;
+}
+
+
+.controls-active .vjs-text-track-display {
+  bottom: 80px !important;
 }

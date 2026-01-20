@@ -6,7 +6,10 @@ import React, {
   useState,
   useLayoutEffect,
 } from "react";
-import Hls from "hls.js";
+import videojs from "video.js";
+import "video.js/dist/video-js.css";
+import "videojs-contrib-quality-levels";
+import type Player from "video.js/dist/types/player";
 import {
   Mic,
   MicOff,
@@ -22,8 +25,15 @@ import {
   Lightbulb,
   Sparkles,
   Settings,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useWebSocket } from "../context/WebSocketContext";
+
+// Override native HLS in modern browsers to use video.js VHS for consistent behavior (if desired)
+// Or let video.js decide. Generally 'auto' is fine, but for quality levels we often need VHS/MSE.
+// For Safari, native HLS is often used, which might strictly hide quality controls unless we override.
+// videojs.options.html5.vhs.overrideNative = true; // Use with caution on iOS
 
 interface VideoPlayerProps {
   activeSpeakers: string[];
@@ -58,11 +68,8 @@ const formatTime = (seconds: number) => {
   const s = Math.floor(seconds % 60);
 
   if (h > 0) {
-    // Format: H:MM:SS
     return `${h}:${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   }
-
-  // Format: M:SS (Standard)
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 };
 
@@ -73,9 +80,9 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
   toggleMic,
   isRecording,
 }) => {
-  // --- Refs (Direct DOM Access) ---
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const hlsRef = useRef<Hls | null>(null);
+  // --- Refs ---
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<Player | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timeSliderRef = useRef<HTMLDivElement>(null);
   const timeInputRef = useRef<HTMLInputElement>(null);
@@ -102,8 +109,12 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
   const [overlayChat, setOverlayChat] = useState<FloatingMessage[]>([]);
   const [isIntro, setIsIntro] = useState(false);
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [settingsView, setSettingsView] = useState<'main' | 'quality' | 'captions' | 'audio'>('main');
   const [ambientMode, setAmbientMode] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
+
+  // Player Readiness State to prevent race conditions
+  const [isPlayerReady, setIsPlayerReady] = useState(false);
 
   // Media UI State
   const [paused, setPaused] = useState(true);
@@ -118,6 +129,10 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
   const [audioTracks, setAudioTracks] = useState<any[]>([]);
   const [currentAudioTrack, setCurrentAudioTrack] = useState<number>(-1);
 
+  // --- Sidecar Subtitles State ---
+  const [subtitleTracks, setSubtitleTracks] = useState<any[]>([]);
+  const [currentSubtitle, setCurrentSubtitle] = useState<number>(-1); // -1 = Off
+
   // --- Helper: Direct CSS Update ---
   const updateSliderVisuals = (currentTime: number, maxDuration: number, buffered: number) => {
     if (timeSliderRef.current) {
@@ -129,6 +144,34 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     }
     if (timeInputRef.current) {
       timeInputRef.current.value = currentTime.toString();
+    }
+  };
+
+  // Reset view when menu closes
+  useEffect(() => {
+    if (!showSettingsMenu) setSettingsView('main');
+  }, [showSettingsMenu]);
+
+  // --- Subtitles Toggle ---
+  const toggleSubtitle = (index: number) => {
+    setCurrentSubtitle(index);
+    const player = playerRef.current;
+    if (player) {
+      const tracks = player.textTracks() as any;
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+        if (index === -1) {
+          track.mode = 'hidden';
+        } else {
+          // If our subtitleTracks[index] corresponds to this track
+          const target = subtitleTracks[index];
+          if (target && track.label === target.label && track.language === target.srclang) {
+            track.mode = 'showing';
+          } else {
+            track.mode = 'hidden';
+          }
+        }
+      }
     }
   };
 
@@ -149,51 +192,7 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     };
   }, [showSettingsMenu]);
 
-  // --- HLS & Video Initialization ---
-  const [src, setSrc] = useState<string>("");
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (src) {
-      if (Hls.isSupported() && (src.endsWith('.m3u8') || src.includes('/proxy'))) {
-        if (hlsRef.current) hlsRef.current.destroy();
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-        });
-        hlsRef.current = hls;
-
-        hls.loadSource(src);
-        hls.attachMedia(video);
-
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          setQualities(hls.levels);
-          if (isIntro) {
-            video.loop = true;
-            video.play().catch(() => { });
-          }
-        });
-        hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
-          setAudioTracks(hls.audioTracks);
-          setCurrentAudioTrack(hls.audioTrack + 1);
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl') || src) {
-        video.src = src;
-        video.load();
-      }
-    }
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-    };
-  }, [src, isIntro]);
-
-  // --- Sync Logic ---
+  // --- Sync Logic Wrapper ---
   const sendSync = useCallback((
     packetType: 'sync' | 'forceSync',
     time: number,
@@ -213,228 +212,144 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     });
   }, [send, isIntro]);
 
-  // --- Video Event Listeners (Optimized) ---
+
+  // --- PLAYER INITIALIZATION ---
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
+    // Make sure the container exists
+    if (!videoContainerRef.current) return;
 
-    const onTimeUpdate = () => {
-      const cur = video.currentTime;
-      const dur = video.duration || 0;
+    // Create element programmatically
+    const videoElement = document.createElement("video-js");
+    videoElement.classList.add('vjs-default-skin', 'vjs-fill');
+    videoContainerRef.current.appendChild(videoElement);
 
-      let buffEnd = 0;
-      if (dur > 0 && video.buffered.length > 0) {
-        for (let i = 0; i < video.buffered.length; i++) {
-          if (video.buffered.start(i) <= cur && video.buffered.end(i) >= cur) {
-            buffEnd = video.buffered.end(i);
-            break;
-          }
+    // Instantiate video.js
+    const player = videojs(videoElement, {
+      controls: false, // We use custom controls
+      autoplay: false,
+      preload: 'auto',
+      responsive: true,
+      fluid: false, // We control sizing via CSS
+      fill: true,
+      html5: {
+        vhs: {
+          overrideNative: !videojs.browser.IS_SAFARI, // Override on non-Safari for quality control
         }
       }
+    });
 
-      updateSliderVisuals(cur, dur, buffEnd);
+    playerRef.current = player;
+    (window as any).player = player; // Debugging
 
-      setDisplayTime((prev) => {
-        const floorCur = Math.floor(cur);
-        if (Math.floor(prev) !== floorCur) return floorCur;
-        return prev;
-      });
-    };
+    // Mark as ready so other effects can run
+    setIsPlayerReady(true);
 
-    const onDurationChange = () => setDuration(video.duration);
+    // --- Quality Levels ---
+    // @ts-ignore
+    const qualityLevels = player.qualityLevels();
+    qualityLevels.on('addqualitylevel', () => {
+      const levels: any[] = [];
+      for (let i = 0; i < qualityLevels.length; i++) {
+        levels.push(qualityLevels[i]);
+      }
+      // Deduplicate or just set
+      setQualities(levels);
+    });
 
-    const onPlayEvent = () => {
-      // STRICT LOCK: If locked and not a remote update, force pause
+    // --- Audio Tracks ---
+    player.audioTracks().on('change', () => {
+      // Update audio track state
+      const tracks = player.audioTracks() as any;
+      const arr = [];
+      let activeIdx = -1;
+      for (let i = 0; i < tracks.length; i++) {
+        arr.push(tracks[i]);
+        if (tracks[i].enabled) activeIdx = i;
+      }
+      setAudioTracks(arr);
+      setCurrentAudioTrack(activeIdx);
+    });
+    player.audioTracks().on('addtrack', () => {
+      const tracks = player.audioTracks() as any;
+      const arr = [];
+      for (let i = 0; i < tracks.length; i++) {
+        arr.push(tracks[i]);
+      }
+      setAudioTracks(arr);
+    });
+
+    // --- Event Listeners ---
+    player.on('timeupdate', () => {
+      const cur = player.currentTime() || 0;
+      const dur = player.duration() || 0;
+      const buff = player.bufferedEnd() || 0;
+
+      updateSliderVisuals(cur, dur, buff);
+      setDisplayTime(cur);
+    });
+
+    player.on('durationchange', () => setDuration(player.duration() || 0));
+
+    player.on('play', () => {
+      // STRICT LOCK
       if (!permissionsRef.current.isAdmin && !permissionsRef.current.userControlsAllowed && !isRemoteUpdate.current) {
-        video.pause();
+        player.pause();
         return;
       }
-
       setPaused(false);
       isSwitchingSource.current = false;
-      if (!isRemoteUpdate.current && !isIntro) sendSync("sync", video.currentTime, false);
-    };
+      if (!isRemoteUpdate.current && !isIntro) sendSync("sync", player.currentTime() || 0, false);
+    });
 
-    const onPauseEvent = () => {
-      // STRICT LOCK: If locked and not a remote update, force play (if it was playing)
+    player.on('pause', () => {
+      // STRICT LOCK
       if (!permissionsRef.current.isAdmin && !permissionsRef.current.userControlsAllowed && !isRemoteUpdate.current) {
-        // We can attempts to revert, but infinite loops are risky. 
-        // Generally, if they pause, they just desync. The auto-sync logic usually fixes it.
-        // But let's try to block the INTENT first via media session. 
-        // If we strictly force play here, it might fight the browser.
-        // Let's rely on the media session block first, but if that fails:
-        video.play().catch(() => { });
+        player.play()?.catch(() => { });
         return;
       }
-
       setPaused(true);
       if (isSwitchingSource.current) return;
-      if (!isRemoteUpdate.current && !isIntro) sendSync("sync", video.currentTime, true);
-    };
+      if (!isRemoteUpdate.current && !isIntro) sendSync("sync", player.currentTime() || 0, true);
+    });
 
-    const onSeeked = () => {
-      // STRICT LOCK: If locked and not remote, revert seek? 
-      // This is hard to revert perfectly without a "previous time" ref.
-      // But usually 'seeking' event happens first. 
-      // For now, let's just trigger a re-sync request if they drift too far?
-      // Actually, if we just sendSync, the server might overwrite us (which is good).
-      // But we don't want to SPAM the server with "I seeked!" if we are locked.
+    player.on('seeked', () => {
       if (!permissionsRef.current.isAdmin && !permissionsRef.current.userControlsAllowed && !isRemoteUpdate.current) {
-        return; // Ignore sending sync
+        return;
       }
+      updateSliderVisuals(player.currentTime() || 0, player.duration() || 0, 0);
+      if (!isRemoteUpdate.current && !isIntro) sendSync("sync", player.currentTime() || 0, player.paused());
+    });
 
-      updateSliderVisuals(video.currentTime, video.duration, 0);
-      if (!isRemoteUpdate.current && !isIntro) sendSync("sync", video.currentTime, video.paused);
-    };
+    player.on('volumechange', () => {
+      setVolume(player.volume() || 1);
+      setMuted(player.muted() || false);
+    });
 
-    const onVolumeChange = () => {
-      setVolume(video.volume);
-      setMuted(video.muted);
-    };
+    player.on('error', () => {
+      console.error("VideoJS Error:", player.error());
+    });
 
-    video.addEventListener('timeupdate', onTimeUpdate);
-    video.addEventListener('durationchange', onDurationChange);
-    video.addEventListener('play', onPlayEvent);
-    video.addEventListener('pause', onPauseEvent);
-    video.addEventListener('seeked', onSeeked);
-    video.addEventListener('volumechange', onVolumeChange);
-
+    // Cleanup
     return () => {
-      video.removeEventListener('timeupdate', onTimeUpdate);
-      video.removeEventListener('durationchange', onDurationChange);
-      video.removeEventListener('play', onPlayEvent);
-      video.removeEventListener('pause', onPauseEvent);
-      video.removeEventListener('seeked', onSeeked);
-      video.removeEventListener('volumechange', onVolumeChange);
-    };
-  }, [isIntro, sendSync]);
-
-  // --- Interaction Handlers ---
-  const showControls = () => {
-    setControlsVisible(true);
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-    if (!paused) {
-      controlsTimeoutRef.current = setTimeout(() => setControlsVisible(false), 2500);
-    }
-  };
-
-  const togglePlay = useCallback(async (e?: React.MouseEvent | React.TouchEvent | any) => {
-    if (e && e.stopPropagation) e.stopPropagation();
-
-    const { isAdmin, userControlsAllowed } = permissionsRef.current;
-    if (!isAdmin && !userControlsAllowed) return;
-
-    const video = videoRef.current;
-    if (!video) return;
-
-    lastLocalInteractionRef.current = Date.now();
-    isRemoteUpdate.current = false;
-
-    try {
-      if (video.paused) await video.play();
-      else video.pause();
-    } catch (error) {
-      console.warn("Interaction interrupted:", error);
-    }
-  }, []);
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    if (videoRef.current) {
-      lastLocalInteractionRef.current = Date.now();
-      isRemoteUpdate.current = false;
-
-      videoRef.current.currentTime = val;
-      updateSliderVisuals(val, duration, 0);
-      setDisplayTime(val);
-    }
-  };
-
-  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    if (videoRef.current) {
-      videoRef.current.volume = val;
-      videoRef.current.muted = val === 0;
-    }
-  };
-
-  const toggleFullscreen = () => {
-    const { isAdmin, userControlsAllowed } = permissionsRef.current;
-    if (!isAdmin && !userControlsAllowed) return; // Block fullscreen if locked
-
-    const el = document.querySelector('.video-player-root');
-    if (!document.fullscreenElement) {
-      el?.requestFullscreen().then(() => setFullscreen(true));
-    } else {
-      document.exitFullscreen().then(() => setFullscreen(false));
-    }
-  };
-
-  // --- Strict Lock Enforcement (Keyboard & Media Keys) ---
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      const { isAdmin, userControlsAllowed } = permissionsRef.current;
-      const isLocked = !isAdmin && !userControlsAllowed;
-
-      if (!isLocked) return;
-
-      // List of keys to block
-      const blockedKeys = [' ', 'k', 'j', 'l', 'm', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'f'];
-
-      if (blockedKeys.includes(e.key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log(`Blocked restricted key: ${e.key}`);
+      if (player) {
+        player.dispose();
       }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown, { capture: true }); // Capture phase to block early
-
-
-
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown, { capture: true });
+      playerRef.current = null;
     };
   }, []);
-
-  // Effect to toggle Media Session handlers based on lock state
-  useEffect(() => {
-    const { isAdmin, userControlsAllowed } = permissionsRef.current;
-    const isLocked = !isAdmin && !userControlsAllowed;
-
-    if ('mediaSession' in navigator) {
-      const actions: MediaSessionAction[] = ['play', 'pause', 'seekbackward', 'seekforward', 'previoustrack', 'nexttrack', 'stop', 'seekto'];
-      if (isLocked) {
-        actions.forEach(action => {
-          try {
-            navigator.mediaSession.setActionHandler(action, () => {
-              console.log(`Media Session action blocked: ${action}`);
-            });
-          } catch (e) { }
-        });
-      } else {
-        // Reset to null to let browser handle or Video player default
-        actions.forEach(action => {
-          try {
-            navigator.mediaSession.setActionHandler(action, null);
-          } catch (e) { }
-        });
-      }
-    }
-  }, [isAdmin, userControlsAllowed]);
-
-
 
   // --- Load Logic ---
   const loadVideo = useCallback((url: string, autoPlay = false, startTime = 0) => {
-    if (!url || url === "#") return;
+    const player = playerRef.current;
+    if (!url || url === "#" || !player) return;
+
     const isNewIntro = url.includes(INTRO_URL) || url === INTRO_URL;
     setIsIntro(isNewIntro);
     isSwitchingSource.current = true;
 
-    if (!isNewIntro && isIntro && videoRef.current) {
-      videoRef.current.volume = userVolumeRef.current;
-      videoRef.current.loop = false;
+    if (!isNewIntro && isIntro) {
+      player.volume(userVolumeRef.current);
+      player.loop(false);
     }
 
     currentSrcRef.current = url;
@@ -447,27 +362,81 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       finalSrc = `/api/proxy?url=${btoa(url)}`;
     }
 
-    setSrc(finalSrc);
+    // --- Fetch Sidecar Subtitles ---
+    setSubtitleTracks([]);
+    // Clear existing remote tracks?
+    // video.js keeps tracks unless we remove them.
+    // video.js keeps tracks unless we remove them.
+    const tracks = player.remoteTextTracks();
+    // @ts-ignore
+    while (tracks.length > 0) {
+      // @ts-ignore
+      player.removeRemoteTextTrack(tracks[0]);
+    }
+
+    if (finalSrc && !finalSrc.includes('blob:')) {
+      try {
+        const baseUrl = finalSrc.substring(0, finalSrc.lastIndexOf('/'));
+        if (baseUrl) {
+          const jsonUrl = `${baseUrl}/subtitles.json`;
+          fetch(jsonUrl).then(res => {
+            if (res.ok) return res.json();
+            throw new Error("No manifest");
+          }).then(data => {
+            const mapped = data.map((t: any) => ({
+              ...t,
+              src: `${baseUrl}/${t.src}`
+            }));
+            setSubtitleTracks(mapped);
+            // Add to player
+            mapped.forEach((t: any) => {
+              player.addRemoteTextTrack({
+                kind: 'subtitles',
+                src: t.src,
+                srclang: t.srclang,
+                label: t.label,
+                default: t.default
+              }, false);
+            });
+          }).catch(() => { });
+        }
+      } catch (e) { }
+    }
+
+    // Determine type
+    let type = 'application/x-mpegURL'; // Default to HLS
+
+    // Check for extension before query params (e.g. video.mp4?token=123)
+    const cleanUrl = finalSrc.split('?')[0].toLowerCase();
+
+    if (cleanUrl.endsWith('.mp4')) type = 'video/mp4';
+    else if (cleanUrl.endsWith('.webm')) type = 'video/webm';
+    else if (cleanUrl.endsWith('.mkv')) type = 'video/x-matroska';
+    else if (cleanUrl.endsWith('.mov')) type = 'video/quicktime';
+
+    // If you know you are strictly using MP4s but URLs don't show it, 
+    // you might want to change the default from HLS to MP4.
+
+    player.src({ src: finalSrc, type });
 
     if (autoPlay || permissionsRef.current.isAdmin || permissionsRef.current.userControlsAllowed) {
-      setTimeout(() => {
-        const video = videoRef.current;
-        if (!video) return;
-
-        const executePlay = () => {
-          if (startTime > 0) video.currentTime = startTime;
-          if (autoPlay) {
-            video.play().catch((e) => console.warn("Autoplay blocked:", e));
-          }
-        };
-        if (video.readyState >= 3) {
-          executePlay();
-        } else {
-          video.addEventListener("canplay", executePlay, { once: true });
+      // Need to wait for load? Video.js handles this logic better usually.
+      // But we can use one('loadedmetadata') or similar.
+      player.one('loadedmetadata', () => {
+        if (startTime > 0) player.currentTime(startTime);
+        if (autoPlay) {
+          const p = player.play();
+          if (p) p.catch(e => console.warn("Autoplay blocked", e));
         }
-      }, 100);
+      });
+    }
+
+    if (isNewIntro) {
+      player.loop(true);
+      player.play()?.catch(() => { });
     }
   }, [isIntro]);
+
 
   const handlePlayIntro = () => {
     loadVideo(INTRO_URL, true);
@@ -482,12 +451,15 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
 
   // --- Incoming Sync Events ---
   useEffect(() => {
+    if (!isPlayerReady) return; // Wait for player
+
     const handleLocalLoad = (event: CustomEvent<{ url: string; autoPlay: boolean }>) => {
       loadVideo(event.detail.url, event.detail.autoPlay);
     };
     window.addEventListener('play-video', handleLocalLoad as EventListener);
     const handleForceSync = () => {
-      if (videoRef.current) sendSync('forceSync', videoRef.current.currentTime, videoRef.current.paused);
+      const player = playerRef.current;
+      if (player) sendSync('forceSync', player.currentTime() || 0, player.paused());
     };
     window.addEventListener('trigger-force-sync', handleForceSync);
 
@@ -495,9 +467,9 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       window.removeEventListener('play-video', handleLocalLoad as EventListener);
       window.removeEventListener('trigger-force-sync', handleForceSync);
     };
-  }, [loadVideo, sendSync]);
+  }, [loadVideo, sendSync, isPlayerReady]);
 
-  // --- Overlay Chat ---
+  // --- Overlay Chat (Unchanged) ---
   useEffect(() => {
     if (!lastMessage || lastMessage.type !== "chat") return;
     if (lastMessage.nick === nickname) return;
@@ -516,59 +488,123 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
 
   // --- State Synchronization ---
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !currentVideoState) return;
+    const player = playerRef.current;
+    if (!isPlayerReady || !player || !currentVideoState) return; // Wait for player
 
     const { url, time: serverTime, paused: serverPaused, timestamp } = currentVideoState;
 
     const timeSinceInteraction = Date.now() - lastLocalInteractionRef.current;
     if (timeSinceInteraction < 1000) return;
 
+    // Latency Compensation
+    // If the packet is old, it might be irrelevant, but for sync we want to know what the server time IS NOW.
+    const networkLatency = (Date.now() - timestamp) / 1000; // seconds
+    const targetTime = serverPaused ? serverTime : serverTime + networkLatency;
+
     const packetAge = Date.now() - timestamp;
-    if (packetAge > 2000 && url === currentSrcRef.current) return;
+    if (packetAge > 2000 && url === currentSrcRef.current) return; // Drop very old packets
 
     if (url && url !== currentSrcRef.current) {
       isRemoteUpdate.current = true;
-      loadVideo(url, !serverPaused, serverTime);
+      loadVideo(url, !serverPaused, targetTime);
       setTimeout(() => { isRemoteUpdate.current = false; }, 1500);
       return;
     }
 
-    if (url === currentSrcRef.current && (!isSwitchingSource.current || (!serverPaused && video.paused))) {
-      const drift = Math.abs(video.currentTime - serverTime);
-      const isPausedStateMatch = video.paused === serverPaused;
+    if (url === currentSrcRef.current && (!isSwitchingSource.current || (!serverPaused && player.paused()))) {
+      const cur = player.currentTime() || 0;
+      const drift = targetTime - cur; // Positive = server is ahead, Negative = server is behind
+      const absDrift = Math.abs(drift);
+      const isPausedStateMatch = player.paused() === serverPaused;
 
-      if (drift < 0.5 && isPausedStateMatch) return;
+      // --- ZERO LATENCY LOGIC ---
 
-      isRemoteUpdate.current = true;
-      if (serverPaused) {
-        if (!video.paused) video.pause();
-        if (drift > 0.1) video.currentTime = serverTime;
-      } else {
-        if (video.paused) video.play().catch(() => { });
-        if (drift > 1.0) video.currentTime = serverTime;
+      // 1. Pause State Mismatch
+      if (!isPausedStateMatch) {
+        isRemoteUpdate.current = true;
+        if (serverPaused) {
+          player.pause();
+          // If we drifted significantly while playing, snap back
+          if (absDrift > 0.1) player.currentTime(targetTime);
+        } else {
+          player.play()?.catch(() => { });
+          // If we are far behind/ahead starting, snap
+          if (absDrift > 0.5) player.currentTime(targetTime);
+        }
+        setTimeout(() => { isRemoteUpdate.current = false; }, 800);
+        return;
       }
-      setTimeout(() => { isRemoteUpdate.current = false; }, 800);
+
+      // 2. Playback Rate (Soft Sync) for small drifts
+      // Only apply if playing
+      if (!serverPaused) {
+        if (absDrift > 0.5) {
+          // HARD SYNC: Too far off, jump
+          isRemoteUpdate.current = true;
+          player.currentTime(targetTime);
+          player.playbackRate(1.0); // Reset rate
+          setTimeout(() => { isRemoteUpdate.current = false; }, 800);
+        } else if (absDrift > 0.05) {
+          // SOFT SYNC: Adjust speed
+          // If drift > 0 (server ahead), speed up (1.05)
+          // If drift < 0 (server behind), slow down (0.95)
+          const newRate = drift > 0 ? 1.05 : 0.95;
+          if (player.playbackRate() !== newRate) {
+            console.log(`Soft Sync: Drift ${drift.toFixed(3)}s, Rate -> ${newRate}`);
+            player.playbackRate(newRate);
+          }
+        } else {
+          // PERFECT SYNC: Reset speed
+          if (player.playbackRate() !== 1.0) {
+            player.playbackRate(1.0);
+          }
+        }
+      } else {
+        // If paused, ensure we are at the exact frame
+        if (absDrift > 0.1) {
+          isRemoteUpdate.current = true;
+          player.currentTime(targetTime);
+          setTimeout(() => { isRemoteUpdate.current = false; }, 800);
+        }
+      }
     }
-  }, [currentVideoState, loadVideo]);
+  }, [currentVideoState, loadVideo, isPlayerReady]);
 
   // --- Ambient Light Loop ---
   useLayoutEffect(() => {
-    if (!ambientMode || !videoRef.current) return;
+    // Note: accessing video element from playerRef might be needed
+    // player.el().querySelector('video') ? or generic logic
+    // Actually canvas drawImage works on the video element itself.
+    // video.js constructs: <div class='video-js ...'><video ... class='vjs-tech'></div>
+    if (!ambientMode || !playerRef.current || !isPlayerReady) return; // Wait for player
+
     let animationFrameId: number;
     let lastFrameTime = 0;
     const interval = 1000 / 30; // 30 FPS
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d', { alpha: false });
 
+    // We need the ACTUAL video element for drawImage
+    // With video.js, player.tech().el() usually gives the MediaElement
+    // We need the ACTUAL video element for drawImage
+    // With video.js, player.tech().el() usually gives the MediaElement
+    // const getTechEl = () => {
+    //   return playerRef.current?.tech(true);
+    //   // @ts-ignore
+    //   // return playerRef.current?.el()?.querySelector('video'); 
+    // }
+
     const loop = (timestamp: number) => {
       if (timestamp - lastFrameTime >= interval) {
-        const video = videoRef.current;
-        if (video && canvas && ctx && !video.paused && !video.ended) {
+        // Safe access
+        const player = playerRef.current;
+        const videoEl = player?.el()?.querySelector('video');
+
+        if (videoEl && canvas && ctx && !player?.paused() && !player?.ended()) {
           if (canvas.width !== 50) canvas.width = 50;
           if (canvas.height !== 50) canvas.height = 50;
           try {
-            ctx.drawImage(video, 0, 0, 50, 50);
+            ctx.drawImage(videoEl, 0, 0, 50, 50);
           } catch (e) { /* ignore */ }
           lastFrameTime = timestamp;
         }
@@ -577,38 +613,106 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     };
     animationFrameId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [ambientMode, src]);
+  }, [ambientMode, isPlayerReady]);
 
   const isLocked = !isAdmin && !userControlsAllowed;
 
-  // Note: style handled via inline in JSX now
+  // --- Interaction Handlers ---
+  const showControls = () => {
+    setControlsVisible(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    if (!paused) {
+      controlsTimeoutRef.current = setTimeout(() => setControlsVisible(false), 2500);
+    }
+  };
+
+  const togglePlay = useCallback(async (e?: React.MouseEvent | React.TouchEvent | any) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+
+    const { isAdmin, userControlsAllowed } = permissionsRef.current;
+    if (!isAdmin && !userControlsAllowed) return;
+
+    const player = playerRef.current;
+    if (!player) return;
+
+    lastLocalInteractionRef.current = Date.now();
+    isRemoteUpdate.current = false;
+
+    try {
+      if (player.paused()) await player.play();
+      else player.pause();
+    } catch (error) {
+      console.warn("Interaction interrupted:", error);
+    }
+  }, []);
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    const player = playerRef.current;
+    if (player) {
+      lastLocalInteractionRef.current = Date.now();
+      isRemoteUpdate.current = false;
+
+      player.currentTime(val);
+      updateSliderVisuals(val, duration, 0);
+      setDisplayTime(val);
+    }
+  };
+
+  const handleVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    const player = playerRef.current;
+    if (player) {
+      player.volume(val);
+      player.muted(val === 0);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    const { isAdmin, userControlsAllowed } = permissionsRef.current;
+    if (!isAdmin && !userControlsAllowed) return;
+
+    // With video.js we could use player.requestFullscreen() but that might affect only the video div
+    // We want the whole ROOT (including chat/overlays) to be fullscreen.
+    const el = document.querySelector('.video-player-root');
+    if (!document.fullscreenElement) {
+      el?.requestFullscreen().then(() => setFullscreen(true));
+    } else {
+      document.exitFullscreen().then(() => setFullscreen(false));
+    }
+  };
 
   return (
     <div
-      className={`video-player-root relative w-full h-full bg-black shadow-2xl font-sans overflow-hidden group/root ${isLocked ? "pointer-events-none" : ""}`}
+      className={`video-player-root relative w-full h-full bg-black shadow-2xl font-sans overflow-hidden group/root ${isLocked ? "pointer-events-none" : ""} ${controlsVisible || paused ? "controls-active" : ""}`}
       onMouseMove={showControls}
       onClick={showControls}
       onMouseLeave={() => !paused && setControlsVisible(false)}
     >
-      {/* Z-INDEX STACKING:
-         0: Ambient Canvas
-         5: Video Element
-         6: Gestures Layer (Invisible, captures double clicks)
-         20: Speakers, Chat, Overlays, Controls (Must be > 6)
-      */}
-
       <canvas
         ref={canvasRef}
         className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full z-0 blur-[80px] saturate-[1.5] brightness-[0.8] transition-opacity duration-1000 pointer-events-none ${ambientMode ? 'opacity-60' : 'opacity-0'}`}
         style={{ zIndex: 0 }}
       />
 
-      <video
-        ref={videoRef}
-        className="block w-full h-full object-contain relative z-[5]"
-        playsInline
-        crossOrigin="anonymous"
-      />
+      {/* Video.js Wrapper - Important: data-vjs-player helps if using react wrappers, but here we just ref the video tag */}
+      <style>{`
+          .video-js,
+          .vjs-tech {
+            width: 100% !important;
+            height: 100% !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+          }
+          .vjs-tech {
+            object-fit: contain !important;
+            display: block !important;
+          }
+        `}</style>
+      <div className="absolute inset-0 z-[5] w-full h-full">
+        <div ref={videoContainerRef} />
+      </div>
 
       <div
         className="absolute inset-0 z-[6] w-full h-full block"
@@ -619,7 +723,7 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
         style={{ pointerEvents: isLocked ? 'none' : 'auto' }}
       />
 
-      {/* --- SPEAKERS (Now Visible on Top) --- */}
+      {/* --- SPEAKERS --- */}
       {activeSpeakers.length > 0 && (
         <div className="absolute top-[60px] right-5 flex flex-col items-end gap-2 z-20">
           {activeSpeakers.map((name, i) => (
@@ -721,9 +825,11 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                 <button
                   className="vp-control-btn w-8 h-8 text-zinc-200 hover:text-white max-[900px]:w-7 max-[900px]:h-7"
                   onClick={() => {
-                    if (videoRef.current) {
-                      videoRef.current.muted = !muted;
-                      setMuted(!muted);
+                    const p = playerRef.current;
+                    if (p) {
+                      const m = !muted;
+                      p.muted(m);
+                      setMuted(m);
                     }
                   }}
                   title={muted ? "Unmute" : "Mute"}
@@ -778,55 +884,181 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
                 </button>
 
                 {showSettingsMenu && (
-                  <div className="absolute bottom-full right-0 w-40 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl p-1 flex flex-col gap-1 shadow-2xl z-50 mb-3 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-bottom-right" ref={settingsRef}>
-                    <div className="text-[10px] font-bold text-zinc-500 uppercase px-3 py-2 tracking-wider">Quality</div>
-                    <button
-                      className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-all text-left ${currentQuality === -1 ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
-                      onClick={() => {
-                        if (hlsRef.current) hlsRef.current.currentLevel = -1;
-                        setCurrentQuality(-1);
-                        setShowSettingsMenu(false);
-                      }}
-                    >
-                      <span>Auto</span>
-                      {currentQuality === -1 && <Check size={14} />}
-                    </button>
-                    {qualities.map((q, i) => (
-                      <button
-                        key={i}
-                        className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-all text-left ${currentQuality === i ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
-                        onClick={() => {
-                          if (hlsRef.current) hlsRef.current.currentLevel = i;
-                          setCurrentQuality(i);
-                          setShowSettingsMenu(false);
-                        }}
-                      >
-                        <span>{q.height}p</span>
-                        {currentQuality === i && <Check size={14} />}
-                      </button>
-                    ))}
-                    {audioTracks.length > 0 && (
-                      <>
-                        <div className="h-px bg-white/5 mx-2 my-1"></div>
-                        <div className="text-[10px] font-bold text-zinc-500 uppercase px-3 py-2 tracking-wider">Audio</div>
+                  <div className="absolute bottom-full right-0 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl p-1 shadow-2xl z-50 mb-3 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-bottom-right" ref={settingsRef}>
+
+                    {/* --- MAIN MENU --- */}
+                    {settingsView === 'main' && (
+                      <div className="flex flex-col gap-0.5">
+                        {/* Quality Row */}
+                        <button
+                          className="w-full flex items-center justify-between px-3 py-2 text-[13px] font-medium text-zinc-300 hover:bg-white/10 hover:text-white rounded-lg transition-all group"
+                          onClick={() => setSettingsView('quality')}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>Quality</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-zinc-500 text-[11px] group-hover:text-zinc-400">
+                            <span>{currentQuality === -1 ? 'Auto' : `${qualities[currentQuality]?.height}p`}</span>
+                            <ChevronRight size={14} />
+                          </div>
+                        </button>
+
+                        {/* Captions Row */}
+                        <button
+                          className="w-full flex items-center justify-between px-3 py-2 text-[13px] font-medium text-zinc-300 hover:bg-white/10 hover:text-white rounded-lg transition-all group"
+                          onClick={() => setSettingsView('captions')}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span>Captions</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-zinc-500 text-[11px] group-hover:text-zinc-400">
+                            <span>{currentSubtitle === -1 ? 'Off' : (subtitleTracks[currentSubtitle]?.label || 'On')}</span>
+                            <ChevronRight size={14} />
+                          </div>
+                        </button>
+
+                        {/* Audio Row (Conditional) */}
+                        {audioTracks.length > 0 && (
+                          <button
+                            className="w-full flex items-center justify-between px-3 py-2 text-[13px] font-medium text-zinc-300 hover:bg-white/10 hover:text-white rounded-lg transition-all group"
+                            onClick={() => setSettingsView('audio')}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>Audio</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-zinc-500 text-[11px] group-hover:text-zinc-400">
+                              <span className="max-w-[80px] truncate block text-right">
+                                {currentAudioTrack === -1 ? 'Default' : (audioTracks[currentAudioTrack]?.name || audioTracks[currentAudioTrack]?.lang || `Track ${currentAudioTrack + 1}`)}
+                              </span>
+                              <ChevronRight size={14} />
+                            </div>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* --- QUALITY SUBMENU --- */}
+                    {settingsView === 'quality' && (
+                      <div className="flex flex-col gap-0.5 max-h-60 overflow-y-auto">
+                        <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-white/5">
+                          <button
+                            className="p-1 -ml-1 hover:bg-white/10 rounded-md text-zinc-400 hover:text-white transition-colors"
+                            onClick={() => setSettingsView('main')}
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <span className="text-xs font-bold text-white tracking-wide">Quality</span>
+                        </div>
+
+                        <button
+                          className={`w-full flex items-center justify-between px-3 py-2 text-[12px] font-medium rounded-lg transition-all text-left ${currentQuality === -1 ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+                          onClick={() => {
+                            // @ts-ignore
+                            const q = playerRef.current?.qualityLevels();
+                            if (q) {
+                              for (let i = 0; i < q.length; i++) q[i].enabled = true;
+                            }
+                            setCurrentQuality(-1);
+                            setSettingsView('main');
+                          }}
+                        >
+                          <span>Auto</span>
+                          {currentQuality === -1 && <Check size={14} />}
+                        </button>
+                        {qualities.map((q, i) => (
+                          <button
+                            key={i}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-[12px] font-medium rounded-lg transition-all text-left ${currentQuality === i ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+                            onClick={() => {
+                              // @ts-ignore
+                              const levels = playerRef.current?.qualityLevels();
+                              if (levels) {
+                                for (let j = 0; j < levels.length; j++) levels[j].enabled = (j === i);
+                              }
+                              setCurrentQuality(i);
+                              setSettingsView('main');
+                            }}
+                          >
+                            <span>{q.height}p</span>
+                            {currentQuality === i && <Check size={14} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* --- CAPTIONS SUBMENU --- */}
+                    {settingsView === 'captions' && (
+                      <div className="flex flex-col gap-0.5 max-h-60 overflow-y-auto">
+                        <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-white/5">
+                          <button
+                            className="p-1 -ml-1 hover:bg-white/10 rounded-md text-zinc-400 hover:text-white transition-colors"
+                            onClick={() => setSettingsView('main')}
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <span className="text-xs font-bold text-white tracking-wide">Captions</span>
+                        </div>
+
+                        <button
+                          className={`w-full flex items-center justify-between px-3 py-2 text-[12px] font-medium rounded-lg transition-all text-left ${currentSubtitle === -1 ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+                          onClick={() => {
+                            toggleSubtitle(-1);
+                            setSettingsView('main');
+                          }}
+                        >
+                          <span>Off</span>
+                          {currentSubtitle === -1 && <Check size={14} />}
+                        </button>
+
+                        {subtitleTracks.map((img, i) => (
+                          <button
+                            key={i}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-[12px] font-medium rounded-lg transition-all text-left ${currentSubtitle === i ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+                            onClick={() => {
+                              toggleSubtitle(i);
+                              setSettingsView('main');
+                            }}
+                          >
+                            <span>{img.label}</span>
+                            {currentSubtitle === i && <Check size={14} />}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* --- AUDIO SUBMENU --- */}
+                    {settingsView === 'audio' && (
+                      <div className="flex flex-col gap-0.5 max-h-60 overflow-y-auto">
+                        <div className="flex items-center gap-2 px-2 py-1.5 mb-1 border-b border-white/5">
+                          <button
+                            className="p-1 -ml-1 hover:bg-white/10 rounded-md text-zinc-400 hover:text-white transition-colors"
+                            onClick={() => setSettingsView('main')}
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <span className="text-xs font-bold text-white tracking-wide">Audio</span>
+                        </div>
+
                         {audioTracks.map((track, i) => (
                           <button
                             key={`audio-${i}`}
-                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium rounded-lg transition-all text-left ${currentAudioTrack === i ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+                            className={`w-full flex items-center justify-between px-3 py-2 text-[12px] font-medium rounded-lg transition-all text-left ${currentAudioTrack === i ? 'bg-white/10 text-white shadow-sm' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
                             onClick={() => {
-                              if (hlsRef.current) {
-                                hlsRef.current.audioTrack = i;
+                              const tracks = playerRef.current?.audioTracks() as any;
+                              if (tracks && tracks[i]) {
+                                tracks[i].enabled = true;
                                 setCurrentAudioTrack(i);
-                                setShowSettingsMenu(false);
                               }
+                              setSettingsView('main');
                             }}
                           >
-                            <span>{track.name || track.lang || `Track ${i + 1}`}</span>
+                            <span className="truncate pr-2">{track.name || track.lang || `Track ${i + 1}`}</span>
                             {currentAudioTrack === i && <Check size={14} />}
                           </button>
                         ))}
-                      </>
+                      </div>
                     )}
+
                   </div>
                 )}
               </div>
