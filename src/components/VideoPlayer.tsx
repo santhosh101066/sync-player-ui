@@ -502,7 +502,27 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     const targetTime = serverPaused ? serverTime : serverTime + networkLatency;
 
     const packetAge = Date.now() - timestamp;
-    if (packetAge > 2000 && url === currentSrcRef.current) return; // Drop very old packets
+    if (packetAge > 2000 && url === currentSrcRef.current && !currentVideoState.isForce) return; // Drop very old packets
+
+    // --- FORCE SYNC LOGIC ---
+    if (currentVideoState.isForce) {
+      console.log(`[ForceSync] Executing hard sync to ${targetTime} (Paused: ${serverPaused})`);
+      isRemoteUpdate.current = true;
+
+      // Ensure source is correct first
+      if (url && url !== currentSrcRef.current) {
+        loadVideo(url, !serverPaused, targetTime);
+      } else {
+        if (player.paused() !== serverPaused) {
+          if (serverPaused) player.pause();
+          else player.play()?.catch(() => { });
+        }
+        player.currentTime(targetTime);
+      }
+
+      setTimeout(() => { isRemoteUpdate.current = false; }, 1000);
+      return;
+    }
 
     if (url && url !== currentSrcRef.current) {
       isRemoteUpdate.current = true;
@@ -556,6 +576,7 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
         } else {
           // PERFECT SYNC: Reset speed
           if (player.playbackRate() !== 1.0) {
+            console.log("Soft Sync Exit: Rate -> 1.0");
             player.playbackRate(1.0);
           }
         }

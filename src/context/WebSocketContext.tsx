@@ -25,6 +25,7 @@ export interface VideoState {
   time: number;
   paused: boolean;
   timestamp: number;
+  isForce?: boolean;
 }
 
 interface WebSocketContextType {
@@ -189,7 +190,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
             url: msg.url || prev?.url || "", // Keep existing URL if update doesn't have one
             time: msg.time,
             paused: msg.paused,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            isForce: msg.type === 'forceSync'
           }));
         }
         if (msg.type === 'load') {
