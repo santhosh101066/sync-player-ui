@@ -164,83 +164,89 @@ export const Session: React.FC = () => {
                 </div>
 
                 {/* CENTER: URL Input (Collapsible on Mobile & Tablet) */}
-                <div className={`flex-1 max-w-2xl px-4 flex justify-center transition-all duration-300 ${isAdmin ? (showMobileControls ? 'absolute top-16 left-0 w-full bg-zinc-950/90 p-4 border-b border-white/5 flex flex-col gap-3' : 'hidden lg:flex') : 'hidden lg:flex'}`}>
+                <div className={`flex-1 max-w-2xl px-4 flex justify-center transition-all duration-300 ${showMobileControls ? 'absolute top-16 left-0 w-full bg-zinc-950/90 p-4 border-b border-white/5 flex flex-col gap-3' : 'hidden lg:flex'}`}>
+
+                    {/* Mobile Title */}
+                    <div className="lg:hidden text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Stream Settings</div>
+
                     {isAdmin ? (
-                        <>
-                            {/* Mobile Title (Only visible in mobile toggle view) */}
-                            <div className="lg:hidden text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Stream Settings</div>
-
-                            <div className="w-full max-w-xl relative flex items-center gap-2 bg-white/5 border border-white/5 rounded-lg p-1.5 focus-within:bg-zinc-900 focus-within:border-indigo-500/50 transition-all">
-                                <LinkIcon size={16} className="text-zinc-500 ml-2" />
-                                <input
-                                    type="text"
-                                    placeholder="Paste stream URL..."
-                                    value={urlInput}
-                                    onChange={(e) => setUrlInput(e.target.value)}
-                                    className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder:text-zinc-600 font-medium h-full"
-                                />
-                                <button
-                                    onClick={handleManualLoad}
-                                    className="px-3 h-8 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-md transition-colors flex items-center gap-2"
-                                >
-                                    <RefreshCw size={14} className={!urlInput ? "" : "animate-[spin_1s_ease-out]"} />
-                                    <span>LOAD</span>
-                                </button>
-                            </div>
-
-                            {/* Mobile-only Controls Section (Rendered here for layout structure in toggle menu) */}
-                            {showMobileControls && (
-                                <div className="lg:hidden flex flex-col gap-4 mt-2">
-                                    <div className="h-px w-full bg-white/10" />
-
-                                    {/* Admin Controls Mobile */}
-                                    <div>
-                                        <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Admin Controls</div>
-                                        <div className="flex items-center justify-between gap-2">
-                                            <button onClick={handleSync} className="flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-amber-500 gap-2"><Zap size={18} /> Sync</button>
-                                            <button onClick={toggleUserControls} className={`flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 ${userControlsAllowed ? "text-green-400" : "text-red-400"}`}>
-                                                {userControlsAllowed ? <Unlock size={18} /> : <Lock size={18} />} Lock
-                                            </button>
-                                            <button onClick={toggleProxy} className={`flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 ${proxyEnabled ? "text-indigo-400" : "text-zinc-400"}`}>
-                                                <Globe size={18} /> Proxy
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Audio Controls Mobile */}
-                                    <div>
-                                        <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Audio</div>
-                                        <div className="flex items-center gap-3 bg-white/5 rounded-lg p-3">
-                                            <button onClick={toggleMic} className={`p-2 rounded-lg ${isRecording ? "bg-red-500 text-white" : "bg-white/10 text-zinc-400"}`}>
-                                                {isRecording ? <Mic size={18} /> : <MicOff size={18} />}
-                                            </button>
-                                            <div className="flex-1 flex items-center gap-2">
-                                                <Volume2 size={18} className="text-zinc-400" />
-                                                <div className="w-full h-8 flex items-center relative opacity-100">
-                                                    <input
-                                                        type="range"
-                                                        min="0"
-                                                        max="2"
-                                                        step="0.01"
-                                                        value={volume}
-                                                        onInput={(e) => setVolume(parseFloat(e.currentTarget.value))}
-                                                        className="absolute inset-0 w-full h-full opacity-0 z-[100] cursor-pointer"
-                                                    />
-                                                    <div className="w-full h-1 bg-white/30 !rounded-full relative cursor-pointer">
-                                                        <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 2) * 100}%` }} />
-                                                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 2) * 100}%` }} />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </>
+                        <div className="w-full max-w-xl relative flex items-center gap-2 bg-white/5 border border-white/5 rounded-lg p-1.5 focus-within:bg-zinc-900 focus-within:border-indigo-500/50 transition-all">
+                            <LinkIcon size={16} className="text-zinc-500 ml-2" />
+                            <input
+                                type="text"
+                                placeholder="Paste stream URL..."
+                                value={urlInput}
+                                onChange={(e) => setUrlInput(e.target.value)}
+                                className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder:text-zinc-600 font-medium h-full"
+                            />
+                            <button
+                                onClick={handleManualLoad}
+                                className="px-3 h-8 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-md transition-colors flex items-center gap-2"
+                            >
+                                <RefreshCw size={14} className={!urlInput ? "" : "animate-[spin_1s_ease-out]"} />
+                                <span>LOAD</span>
+                            </button>
+                        </div>
+                    ) : userControlsAllowed ? (
+                        <div className="hidden lg:flex items-center gap-2 text-green-400/50 text-sm font-medium select-none">
+                            <Unlock size={14} />
+                            <span>Controls enabled</span>
+                        </div>
                     ) : (
                         <div className="hidden lg:flex items-center gap-2 text-white/20 text-sm font-medium select-none">
                             <Lock size={14} />
                             <span>Controls restricted to admin</span>
+                        </div>
+                    )}
+
+                    {/* Mobile-only Controls Section */}
+                    {showMobileControls && (
+                        <div className="lg:hidden flex flex-col gap-4 mt-2">
+                            <div className="h-px w-full bg-white/10" />
+
+                            {/* Admin Controls Mobile */}
+                            {isAdmin && (
+                                <div>
+                                    <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Admin Controls</div>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <button onClick={handleSync} className="flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center text-amber-500 gap-2"><Zap size={18} /> Sync</button>
+                                        <button onClick={toggleUserControls} className={`flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 ${userControlsAllowed ? "text-green-400" : "text-red-400"}`}>
+                                            {userControlsAllowed ? <Unlock size={18} /> : <Lock size={18} />} Lock
+                                        </button>
+                                        <button onClick={toggleProxy} className={`flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 ${proxyEnabled ? "text-indigo-400" : "text-zinc-400"}`}>
+                                            <Globe size={18} /> Proxy
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Audio Controls Mobile */}
+                            <div>
+                                <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Audio</div>
+                                <div className="flex items-center gap-3 bg-white/5 rounded-lg p-3">
+                                    <button onClick={toggleMic} className={`p-2 rounded-lg ${isRecording ? "bg-red-500 text-white" : "bg-white/10 text-zinc-400"}`}>
+                                        {isRecording ? <Mic size={18} /> : <MicOff size={18} />}
+                                    </button>
+                                    <div className="flex-1 flex items-center gap-2">
+                                        <Volume2 size={18} className="text-zinc-400" />
+                                        <div className="w-full h-8 flex items-center relative opacity-100">
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="2"
+                                                step="0.01"
+                                                value={volume}
+                                                onInput={(e) => setVolume(parseFloat(e.currentTarget.value))}
+                                                className="absolute inset-0 w-full h-full opacity-0 z-[100] cursor-pointer"
+                                            />
+                                            <div className="w-full h-1 bg-white/30 !rounded-full relative cursor-pointer">
+                                                <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 2) * 100}%` }} />
+                                                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 2) * 100}%` }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>

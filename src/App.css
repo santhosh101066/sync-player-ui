@@ -160,6 +160,8 @@
     flex: 0 0 auto;
     background: #000;
     z-index: 10;
+    min-height: 250px;
+    /* Ensure video is visible on mobile */
   }
 
   /* Header (Top) */
