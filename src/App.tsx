@@ -6,6 +6,7 @@ import { TermsAndPolicy } from './pages/Terms';
 import { PrivacyPolicy } from './pages/Privacy';
 import { About } from './pages/About';
 import { NotFound } from './pages/NotFound';
+import AdminCookies from './pages/AdminCookies';
 import './App.css';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
           <Route path="/terms" element={<TermsAndPolicy />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/about" element={<About />} />
+          <Route path="/admin/cookies" element={<AdminCookies />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Router>

@@ -207,7 +207,7 @@ export const useAudio = () => {
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: true, 
-                        autoGainControl: false, 
+                        autoGainControl: true, 
                         noiseSuppression: false, 
                         //@ts-ignore
                         latency: 0,

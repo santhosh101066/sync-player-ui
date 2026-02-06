@@ -9,6 +9,8 @@ import React, {
 import videojs from "video.js";
 import "video.js/dist/video-js.css";
 import "videojs-contrib-quality-levels";
+import "videojs-contrib-quality-levels";
+
 import type Player from "video.js/dist/types/player";
 import {
   Mic,
@@ -333,6 +335,7 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       responsive: true,
       fluid: false, // We control sizing via CSS
       fill: true,
+      techOrder: ["html5"], // Removed "youtube"
       html5: {
         vhs: {
           overrideNative: !videojs.browser.IS_SAFARI, // Override on non-Safari for quality control
@@ -461,7 +464,30 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       !url.startsWith("/") &&
       !url.includes(window.location.host)
     ) {
-      finalSrc = `/api/proxy?url=${btoa(url)}`;
+      if (
+        url.includes("youtube.com") ||
+        url.includes("youtu.be")
+      ) {
+        // Extract ID
+        let videoId = "";
+        try {
+          if (url.includes("youtu.be")) {
+            videoId = url.split("youtu.be/")[1]?.split("?")[0];
+          } else {
+            const urlObj = new URL(url);
+            videoId = urlObj.searchParams.get("v") || "";
+          }
+        } catch (e) { }
+
+        if (videoId) {
+          finalSrc = `/api/youtube/dash/manifest.mpd?id=${videoId}`;
+        } else {
+          // Fallback if ID extraction fails (shouldn't happen for valid URLs)
+          finalSrc = `/api/proxy?url=${btoa(url)}`;
+        }
+      } else {
+        finalSrc = `/api/proxy?url=${btoa(url)}`;
+      }
     }
 
     // --- Fetch Sidecar Subtitles ---
@@ -511,7 +537,18 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
     // Check for extension before query params (e.g. video.mp4?token=123)
     const cleanUrl = finalSrc.split('?')[0].toLowerCase();
 
-    if (cleanUrl.endsWith('.mp4')) type = 'video/mp4';
+    // Check for YouTube (Standard or Proxied)
+    if (
+      finalSrc.includes('youtube.com') ||
+      finalSrc.includes('youtu.be') ||
+      finalSrc.includes('/api/youtube/stream')
+    ) {
+      // Direct stream fallback
+      type = 'video/mp4';
+    } else if (finalSrc.includes('/api/youtube/dash/manifest.mpd')) {
+      type = 'application/dash+xml';
+    }
+    else if (cleanUrl.endsWith('.mp4')) type = 'video/mp4';
     else if (cleanUrl.endsWith('.webm')) type = 'video/webm';
     else if (cleanUrl.endsWith('.mkv')) type = 'video/x-matroska';
     else if (cleanUrl.endsWith('.mov')) type = 'video/quicktime';

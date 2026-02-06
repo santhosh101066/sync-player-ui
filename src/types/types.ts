@@ -34,4 +34,4 @@ export type ServerMessage =
     | { type: 'load'; url: string }
     | { type: 'kick' }
     | { type: 'ping' } | { type: 'pong' }
-    | { type: 'auth-success'; nick: string; picture?: string };
+    | { type: 'auth-success'; nick: string; picture?: string; email?: string };

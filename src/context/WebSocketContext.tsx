@@ -113,6 +113,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     });
 
+    newSocket.io.engine.on("ping", () => {
+      // console.log("Ping sent");
+    });
+
     newSocket.on("disconnect", (reason) => {
       console.log("🔴 Disconnected:", reason);
       setIsConnected(false);
@@ -148,6 +152,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         if (msg.type === 'auth-success') {
           // Authentication confirmed!
           setNickname(msg.nick);
+          // Store email for admin page access control
+          if (msg.email) {
+            localStorage.setItem('userEmail', msg.email);
+          }
           // Note: picture is derived from connectedUsers, but we could store it if needed.
           // For now, msg.nick is sufficient to stop "Authenticating..."
         }

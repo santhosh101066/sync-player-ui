@@ -10,21 +10,23 @@ import { useAudio } from "../hooks/useAudio";
 import {
     Mic,
     MicOff,
+    Volume2,
+    Lock,
+    Unlock,
+    Link as LinkIcon,
+    RefreshCw,
+    Globe,
+    Settings,
+    X,
     Shield,
+    VolumeX,
     MessageSquare,
     FolderOpen,
-    Volume2,
-    Link as LinkIcon,
-    Zap,
-    RefreshCw,
-    VolumeX,
     Users,
-    Unlock,
-    Lock,
-    Globe,
-    Settings2,
-    X,
+    Youtube,
+    Zap // Restored missing Zap import
 } from "lucide-react";
+import YouTubeBrowser from "../components/YouTubeBrowser";
 import "../App.css";
 import "../App.css";
 
@@ -85,6 +87,7 @@ export const Session: React.FC = () => {
     // 4. Form Inputs
     const [showAdminDashboard, setShowAdminDashboard] = useState(false);
     const [showMobileControls, setShowMobileControls] = useState(false);
+    const [showYouTubeBrowser, setShowYouTubeBrowser] = useState(false);
     const [activeTab, setActiveTab] = useState<"chat" | "library" | "users">(
         "chat"
     );
@@ -119,19 +122,30 @@ export const Session: React.FC = () => {
         send({ type: "toggle-proxy", value: !proxyEnabled });
     };
 
+    const handleURLChange = (url: string) => {
+        // 1. Send load command via WebSocket for sync [cite: 353]
+        send({ type: "load", url: url });
+
+        // 2. [FIX] Dispatch local event to force the VideoPlayer component to load/play immediately
+        window.dispatchEvent(
+            new CustomEvent("play-video", {
+                detail: { url: url, autoPlay: true },
+            })
+        );
+    };
+
     const handleManualLoad = () => {
         if (urlInput) {
-            // 1. Send load command via WebSocket for sync [cite: 353]
-            send({ type: "load", url: urlInput });
-
-            // 2. [FIX] Dispatch local event to force the VideoPlayer component to load/play immediately
-            window.dispatchEvent(
-                new CustomEvent("play-video", {
-                    detail: { url: urlInput, autoPlay: true },
-                })
-            );
+            handleURLChange(urlInput);
+            setShowYouTubeBrowser(false); // Close if open
         }
     };
+
+    // Callback from YouTubeBrowser
+    const handleYouTubeSelect = (url: string) => {
+        handleURLChange(url);
+        setShowYouTubeBrowser(false);
+    }
 
     const handleSync = () => {
         // Dispatch a custom event that VideoPlayer will listen for
@@ -185,6 +199,16 @@ export const Session: React.FC = () => {
                             >
                                 <RefreshCw size={14} className={!urlInput ? "" : "animate-[spin_1s_ease-out]"} />
                                 <span>LOAD</span>
+                            </button>
+
+                            {/* YouTube Button */}
+                            <button
+                                onClick={() => setShowYouTubeBrowser(true)}
+                                className="px-3 h-8 bg-[#FF0000]/20 hover:bg-[#FF0000]/30 text-red-500 hover:text-white border border-red-500/20 hover:border-red-500/50 text-xs font-bold rounded-md transition-all flex items-center gap-2 ml-1"
+                                title="Browse YouTube"
+                            >
+                                <Youtube size={16} />
+                                <span className="hidden sm:inline">YOUTUBE</span>
                             </button>
                         </div>
                     ) : userControlsAllowed ? (
@@ -311,7 +335,7 @@ export const Session: React.FC = () => {
                             className="p-2 text-zinc-400 hover:text-white bg-white/5 rounded-lg"
                             onClick={() => setShowMobileControls(!showMobileControls)}
                         >
-                            {showMobileControls ? <X size={20} /> : <Settings2 size={20} />}
+                            {showMobileControls ? <X size={20} /> : <Settings size={20} />}
                         </button>
                     </div>
 
@@ -380,15 +404,21 @@ export const Session: React.FC = () => {
                 {/* CSS for specific animations */}
                 <style>{`
                     .pulse-anim { animation: pulse 1s infinite; }
-                    @keyframes pulse { 
-                        0% { opacity: 1; } 
-                        50% { opacity: 0.5; } 
-                        100% { opacity: 1; } 
+                    @keyframes pulse {
+                        0% { opacity: 1; }
+                        50% { opacity: 0.5; }
+                        100% { opacity: 1; }
                     }
                 `}</style>
             </div>
 
-
+            {/* YouTube Browser Modal */}
+            <YouTubeBrowser
+                isOpen={showYouTubeBrowser}
+                onClose={() => setShowYouTubeBrowser(false)}
+                onSelectVideo={handleYouTubeSelect}
+                isAdmin={isAdmin}
+            />
         </div >
     );
 };
