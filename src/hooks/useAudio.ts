@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useWebSocket } from '../context/WebSocketContext';
 
 // --- CONFIGURATION ---
-const TARGET_SAMPLE_RATE = 16000; 
-const JITTER_BUFFER_MS = 0.06; 
+const TARGET_SAMPLE_RATE = 16000;
+const JITTER_BUFFER_MS = 0.06;
 
 // --- OPTIMIZED AUDIO WORKLET ---
 const WORKLET_CODE = `
@@ -98,10 +98,10 @@ export const useAudio = () => {
     const audioCtxRef = useRef<AudioContext | null>(null);
     const micStreamRef = useRef<MediaStream | null>(null);
     const workletNodeRef = useRef<AudioWorkletNode | null>(null);
-    const peerAudioStateRef = useRef<Record<number, { nextTime: number }>>({});
+    const peerAudioStateRef = useRef<Record<string, { nextTime: number }>>({});  // Changed from Record<number, ...>
     const isResumingRef = useRef(false);
-    const speakerActivityRef = useRef<Map<number, number>>(new Map());
-    const myUserIdRef = useRef<number | null>(myUserId);
+    const speakerActivityRef = useRef<Map<string, number>>(new Map());  // Changed from Map<number, number>
+    const myUserIdRef = useRef<string | null>(myUserId);  // Changed from number to string
 
     useEffect(() => {
         myUserIdRef.current = myUserId;
@@ -134,13 +134,14 @@ export const useAudio = () => {
                 ctx.resume().finally(() => isResumingRef.current = false);
             }
 
-            const view = new DataView(data);
-            const userId = view.getUint32(0, false);
+            // Parse userId as string (first 32 bytes for userId hash)
+            const userIdBytes = new Uint8Array(data.slice(0, 32));
+            const userId = Array.from(userIdBytes).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
             speakerActivityRef.current.set(userId, Date.now());
 
             if (ctx.state === 'suspended') return;
 
-            const pcmBuffer = data.slice(4);
+            const pcmBuffer = data.slice(32);  // Skip 32-byte userId header
             const int16Data = new Int16Array(pcmBuffer);
             const float32Data = new Float32Array(int16Data.length);
             for (let i = 0; i < int16Data.length; i++) {
@@ -151,7 +152,7 @@ export const useAudio = () => {
                 peerAudioStateRef.current[userId] = { nextTime: ctx.currentTime + JITTER_BUFFER_MS };
             }
             const peer = peerAudioStateRef.current[userId];
-            
+
             const buffer = ctx.createBuffer(1, float32Data.length, TARGET_SAMPLE_RATE);
             buffer.getChannelData(0).set(float32Data);
 
@@ -163,9 +164,9 @@ export const useAudio = () => {
             gain.connect(ctx.destination);
 
             const now = ctx.currentTime;
-            
+
             if (peer.nextTime < now) {
-                peer.nextTime = now; 
+                peer.nextTime = now;
             }
             else if (peer.nextTime > now + 0.2) {
                 peer.nextTime = now + JITTER_BUFFER_MS;
@@ -206,9 +207,9 @@ export const useAudio = () => {
 
                 const stream = await navigator.mediaDevices.getUserMedia({
                     audio: {
-                        echoCancellation: true, 
-                        autoGainControl: true, 
-                        noiseSuppression: false, 
+                        echoCancellation: true,
+                        autoGainControl: true,
+                        noiseSuppression: false,
                         //@ts-ignore
                         latency: 0,
                         sampleRate: TARGET_SAMPLE_RATE,
@@ -223,15 +224,20 @@ export const useAudio = () => {
 
                 workletNode.port.onmessage = (e) => {
                     const pcmData = e.data;
-                    const totalLen = 4 + pcmData.byteLength;
-                    const buffer = new ArrayBuffer(totalLen);
-                    const view = new DataView(buffer);
-                    
                     const currentId = myUserIdRef.current;
                     if (currentId === null) return;
 
-                    view.setUint32(0, currentId, false);
-                    const destInt16 = new Int16Array(buffer, 4);
+                    // Encode userId as first 32 bytes (simplified: use first 32 chars of hash)
+                    const userIdBytes = new Uint8Array(32);
+                    for (let i = 0; i < Math.min(currentId.length, 32); i++) {
+                        userIdBytes[i] = currentId.charCodeAt(i);
+                    }
+
+                    const totalLen = 32 + pcmData.byteLength;
+                    const buffer = new ArrayBuffer(totalLen);
+                    const bufferView = new Uint8Array(buffer);
+                    bufferView.set(userIdBytes, 0);
+                    const destInt16 = new Int16Array(buffer, 32);
                     const srcInt16 = new Int16Array(pcmData);
                     destInt16.set(srcInt16);
 

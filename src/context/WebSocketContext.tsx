@@ -39,8 +39,8 @@ interface WebSocketContextType {
   isAdmin: boolean;
   setIsAdmin: (isAdmin: boolean) => void;
   subscribeToAudio: (callback: (data: ArrayBuffer) => void) => () => void;
-  myUserId: number | null;
-  userMap: Record<number, string>;
+  myUserId: string | null;  // Changed from number to string
+  userMap: Record<string, string>;  // Changed from Record<number, string>
   connectedUsers: ConnectedUser[];
   userControlsAllowed: boolean;
   proxyEnabled: boolean;
@@ -63,13 +63,13 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // User State
   const [nickname, setNickname] = useState("Guest");
-  const [myUserId, setMyUserId] = useState<number | null>(null);
+  const [myUserId, setMyUserId] = useState<string | null>(null);  // Changed from number to string
   const [isAdmin, setIsAdmin] = useState(false);
 
   // App State
   const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([]);
-  const [userMap, setUserMap] = useState<Record<number, string>>({});
+  const [userMap, setUserMap] = useState<Record<string, string>>({});  // Changed from Record<number, string>
   const [userControlsAllowed, setUserControlsAllowed] = useState(false);
   const [proxyEnabled, setProxyEnabled] = useState(true);
   const [chatMessages, setChatMessages] = useState<UIChatMessage[]>([]);
@@ -135,13 +135,19 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
+        if (msg.type === 'session-replaced') {
+          alert(msg.text);
+          window.location.reload();
+          return;
+        }
+
         if (msg.type === "welcome") {
           setMyUserId(msg.userId);
         }
 
         if (msg.type === 'user-list') {
           setConnectedUsers(msg.users);
-          const map: Record<number, string> = {};
+          const map: Record<string, string> = {};  // Changed from Record<number, string>
           msg.users.forEach((u) => map[u.id] = u.nick);
           setUserMap(map);
         }

@@ -1,5 +1,5 @@
 export interface ConnectedUser {
-    id: number;
+    id: string;  // Changed from number to string (hashed Google ID)
     nick: string;
     isAdmin: boolean;
     isMuted: boolean;
@@ -15,14 +15,14 @@ export type ClientMessage =
     | { type: 'load'; url: string }
     | { type: 'timeUpdate'; time: number; paused: boolean }
     | { type: 'toggle-user-controls'; value: boolean }
-    | { type: 'mute-user'; targetId: number }
-    | { type: 'kick-user'; targetId: number }
+    | { type: 'mute-user'; targetId: string }  // Changed from number to string
+    | { type: 'kick-user'; targetId: string }  // Changed from number to string
     | { type: 'toggle-proxy'; value: boolean }
     | { type: 'get-users' }
     | { type: 'ping' } | { type: 'pong' };
 
 export type ServerMessage =
-    | { type: 'welcome'; userId: number }
+    | { type: 'welcome'; userId: string }  // Changed from number to string
     | { type: 'user-list'; users: ConnectedUser[] }
     | { type: 'system-state'; userControlsAllowed: boolean; proxyEnabled?: boolean }
     | { type: 'admin-success' }
@@ -33,5 +33,6 @@ export type ServerMessage =
     | { type: 'sync' | 'forceSync'; time: number; paused: boolean; url?: string }
     | { type: 'load'; url: string }
     | { type: 'kick' }
+    | { type: 'session-replaced'; text: string }  // NEW: notify user of session replacement
     | { type: 'ping' } | { type: 'pong' }
     | { type: 'auth-success'; nick: string; picture?: string; email?: string };
