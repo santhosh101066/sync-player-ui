@@ -95,7 +95,7 @@ export const extractYouTubeVideoId = (url: string): string | null => {
             const urlObj = new URL(url);
             return urlObj.searchParams.get("v");
         }
-    } catch (e) {
+    } catch {
         return null;
     }
 };

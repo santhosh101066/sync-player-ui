@@ -105,7 +105,7 @@ export const Session: React.FC = () => {
 
             // Ignore intro URL updates in the input box to keep it clean
             if (!lastMessage.url.includes("/intro.mp4")) {
-                setUrlInput(lastMessage.url);
+                setTimeout(() => setUrlInput(lastMessage.url), 0);
                 currentServerUrlRef.current = lastMessage.url;
             }
         }

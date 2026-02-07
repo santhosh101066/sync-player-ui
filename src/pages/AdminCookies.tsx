@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, CheckCircle, XCircle, RefreshCw, Info } from 'lucide-react';
 
@@ -28,7 +28,7 @@ export default function AdminCookies() {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
 
-    const fetchStatus = async () => {
+    const fetchStatus = useCallback(async () => {
         if (!adminToken) {
             setMessage({ type: 'error', text: 'Please enter admin token first' });
             return;
@@ -48,12 +48,12 @@ export default function AdminCookies() {
             const data = await res.json();
             setStatus(data);
             setMessage(null);
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Failed to fetch status' });
         } finally {
             setLoading(false);
         }
-    };
+    }, [adminToken]);
 
     const uploadCookies = async () => {
         if (!adminToken) {
@@ -86,7 +86,7 @@ export default function AdminCookies() {
             } else {
                 setMessage({ type: 'error', text: data.error || 'Upload failed' });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Failed to upload cookies' });
         } finally {
             setLoading(false);
@@ -113,7 +113,7 @@ export default function AdminCookies() {
             } else {
                 setMessage({ type: 'error', text: `✗ ${data.message}` });
             }
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Validation failed' });
         } finally {
             setLoading(false);
@@ -132,7 +132,7 @@ export default function AdminCookies() {
 
             const data = await res.json();
             setMessage({ type: 'success', text: data.message });
-        } catch (err) {
+        } catch {
             setMessage({ type: 'error', text: 'Failed to clear cache' });
         } finally {
             setLoading(false);
@@ -187,7 +187,7 @@ export default function AdminCookies() {
         if (adminToken && isAuthorized) {
             fetchStatus();
         }
-    }, [isAuthorized]); // Only run when authorized
+    }, [adminToken, isAuthorized, fetchStatus]); // Only run when authorized
 
     if (checking) {
         return (

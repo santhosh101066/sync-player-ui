@@ -54,11 +54,11 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
   }, []);
 
   // --- Overlay Chat ---
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!lastMessage || lastMessage.type !== "chat") return;
     if (lastMessage.nick === nickname) return;
-    if (lastMessage.isSystem && lastMessage.text.includes(nickname)) return;
+    // Filter out ALL system messages (left/joining notifications)
+    if (lastMessage.isSystem) return;
 
     const id = Date.now() + Math.random();
     const newMsg: FloatingMessage = {
@@ -68,8 +68,10 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       color: getAvatarColor(lastMessage.nick),
     };
 
-    // This setState is intentional - we're responding to external WebSocket messages
-    setOverlayChat((prev) => [...prev, newMsg]);
+    // This setState responds to external WebSocket messages, using timeout to avoid strict mode double-invocations & break sync effect cycle
+    setTimeout(() => {
+      setOverlayChat((prev) => [...prev, newMsg]);
+    }, 0);
 
     const timer = setTimeout(() => {
       setOverlayChat((prev) => prev.filter((m) => m.id !== id));
@@ -109,12 +111,13 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
       {/* Chat Overlay */}
       <ChatOverlay messages={overlayChat} />
 
-      {/* Sync Overlay (Buffer Wait, Admin Toast) */}
+      {/* Sync Overlay (Admin Toast) */}
       <SyncOverlay
-        isBuffering={false}
-        syncMessage={undefined}
+        syncState={videoSync.syncState}
+        isBuffering={videoSync.isBuffering}
         isAdmin={isAdmin}
-        showAdminToast={false}
+        showAdminToast={videoSync.showAdminToast}
+        onDismissToast={videoSync.dismissSyncToast}
       />
 
       {/* Player Controls */}

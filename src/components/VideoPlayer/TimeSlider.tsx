@@ -11,7 +11,7 @@ export const TimeSlider = React.memo<TimeSliderProps>(({
     return (
         <div className="w-full relative h-3.5 mb-2 max-[900px]:h-3 max-[900px]:mb-0.5">
             <div
-                ref={timeSliderRef}
+                ref={timeSliderRef as React.RefObject<HTMLDivElement>}
                 className="w-full h-5 flex items-center cursor-pointer relative group/slider max-[900px]:h-3"
                 style={{
                     pointerEvents: isLocked ? "none" : "auto",
@@ -19,7 +19,7 @@ export const TimeSlider = React.memo<TimeSliderProps>(({
                 }}
             >
                 <input
-                    ref={timeInputRef}
+                    ref={timeInputRef as React.RefObject<HTMLInputElement>}
                     type="range"
                     min="0"
                     max={duration || 100}

@@ -31,7 +31,7 @@ export interface VideoState {
 interface WebSocketContextType {
   socket: Socket | null;
   isConnected: boolean;
-  connect: (googleToken: string) => void;
+  connect: (tokenOrEmail: string, authType?: 'google' | 'dev') => void;
   send: (data: ClientMessage) => void;
   sendAudio: (data: ArrayBuffer) => void;
   lastMessage: ServerMessage | null;
@@ -66,6 +66,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   const [myUserId, setMyUserId] = useState<string | null>(null);  // Changed from number to string
   const [isAdmin, setIsAdmin] = useState(false);
 
+  // Use nicknameRef to capture current nickname without breaking memoization
+  const nicknameRef = useRef(nickname);
+  useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
+
   // App State
   const [lastMessage, setLastMessage] = useState<ServerMessage | null>(null);
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([]);
@@ -87,7 +91,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   // --- 2. Connection Logic (Socket.IO) ---
-  const connect = useCallback((googleToken: string) => {
+  const connect = useCallback((tokenOrEmail: string, authType: 'google' | 'dev' = 'google') => {
     // Temporary nick until server validates
     setNickname("Authenticating...");
 
@@ -108,8 +112,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
     newSocket.on("connect", () => {
       console.log("🟢 Connected via Socket.IO");
       setIsConnected(true);
-      if (googleToken) {
-        newSocket.emit("message", { type: 'auth-google', token: googleToken });
+      if (tokenOrEmail) {
+        if (authType === 'google') {
+          newSocket.emit("message", { type: 'auth-google', token: tokenOrEmail });
+        } else {
+          newSocket.emit("message", { type: 'auth-dev', email: tokenOrEmail });
+        }
       }
     });
 
@@ -171,7 +179,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Chat: Filter own messages
         if (msg.type === 'chat') {
-          if (msg.nick === nickname && !msg.isSystem) {
+          if (msg.nick === nicknameRef.current && !msg.isSystem) {
             return;
           }
           setChatMessages(prev => [...prev, {
@@ -258,7 +266,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       if (socket) socket.disconnect();
     };
-  }, []);
+  }, [socket]);
 
   const userPicture = connectedUsers.find(u => u.id === myUserId)?.picture;
 

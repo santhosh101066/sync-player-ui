@@ -30,7 +30,7 @@ export const Login: React.FC = () => {
                     </p>
                 </div>
 
-                <div className="flex justify-center">
+                <div className="flex flex-col gap-4 justify-center items-center">
                     <GoogleLogin
                         onSuccess={credentialResponse => {
                             if (credentialResponse.credential) {
@@ -43,6 +43,22 @@ export const Login: React.FC = () => {
                         theme="filled_black"
                         shape="pill"
                     />
+
+                    {import.meta.env.DEV && (
+                        <button
+                            onClick={() => {
+                                const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+                                if (adminEmail) {
+                                    connect(adminEmail, 'dev');
+                                } else {
+                                    alert("VITE_ADMIN_EMAIL is not set in .env");
+                                }
+                            }}
+                            className="px-4 py-2 bg-red-600/80 hover:bg-red-600 text-white rounded-full text-sm font-medium transition-colors border border-red-400/30"
+                        >
+                            Dev Login (Bypass)
+                        </button>
+                    )}
                 </div>
 
                 <div className="pt-6 border-t border-white/10 flex gap-4 justify-center text-xs text-white/40 font-medium">

@@ -47,7 +47,7 @@ export const VideoSurface: React.FC<VideoSurfaceProps> = ({
         <>
             {/* Ambient Canvas */}
             <canvas
-                ref={canvasRef}
+                ref={canvasRef as React.RefObject<HTMLCanvasElement>}
                 className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full z-0 blur-[80px] saturate-[1.5] brightness-[0.8] transition-opacity duration-1000 pointer-events-none ${ambientMode ? "opacity-60" : "opacity-0"
                     }`}
                 style={{ zIndex: 0 }}
@@ -71,7 +71,7 @@ export const VideoSurface: React.FC<VideoSurfaceProps> = ({
 
             {/* Video Container */}
             <div className="absolute inset-0 z-[5] w-full h-full">
-                <div ref={videoContainerRef} />
+                <div ref={videoContainerRef as React.RefObject<HTMLDivElement>} />
             </div>
 
             {/* Interaction Layer (for double-click fullscreen) */}

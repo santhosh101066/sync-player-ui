@@ -28,7 +28,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
     }, [showSettingsMenu]);
 
     const handleQualitySelect = (index: number) => {
-        const q = playerRef.current?.qualityLevels() as any;
+        const q = (playerRef.current as any)?.qualityLevels();
         if (q) {
             for (let i = 0; i < q.length; i++) {
                 q[i].enabled = index === -1 ? true : i === index;
@@ -66,7 +66,7 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({
             {showSettingsMenu && (
                 <div
                     className="absolute bottom-full right-0 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl p-1 shadow-2xl z-50 mb-3 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-bottom-right"
-                    ref={settingsRef}
+                    ref={settingsRef as React.RefObject<HTMLDivElement>}
                 >
                     {/* Main Menu */}
                     {settingsView === "main" && (

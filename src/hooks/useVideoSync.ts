@@ -6,19 +6,20 @@ import { useWebSocket } from "../context/WebSocketContext";
 import { updateSliderVisuals as updateSliderVisualsUtil, determineVideoType, extractYouTubeVideoId } from "../utils/videoPlayer.utils";
 import {
     INTRO_URL,
-    SOFT_SYNC_THRESHOLD,
     HARD_SYNC_THRESHOLD,
     PAUSE_SYNC_THRESHOLD,
     SOFT_SYNC_SPEED_UP,
     SOFT_SYNC_SLOW_DOWN,
     NORMAL_PLAYBACK_RATE,
+
     REMOTE_UPDATE_LOCK_DURATION,
     SOURCE_SWITCH_LOCK_DURATION,
     MAX_PACKET_AGE,
     LOCAL_INTERACTION_COOLDOWN,
 } from "../constants/videoPlayer.constants";
+import { SyncState, type VideoSyncState } from "../types/videoPlayer.types";
 
-export const useVideoSync = () => {
+export const useVideoSync = (): VideoSyncState => {
     // --- Refs ---
     const videoContainerRef = useRef<HTMLDivElement>(null);
     const playerRef = useRef<Player | null>(null);
@@ -62,9 +63,16 @@ export const useVideoSync = () => {
     const [subtitleTracks, setSubtitleTracks] = useState<any[]>([]);
     const [currentSubtitle, setCurrentSubtitle] = useState<number>(-1); // -1 = Off
 
+    // --- Sync State Management ---
+    const [syncState, setSyncState] = useState<SyncState>(SyncState.IDLE);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [showAdminToast, setShowAdminToast] = useState(false);
+    const [isWaiting, setIsWaiting] = useState(false);
+    const syncTimeoutRef = useRef<number | null>(null);
+
     // --- Helper: Direct CSS Update ---
     const updateSliderVisuals = useCallback((currentTime: number, maxDuration: number, buffered: number) => {
-        updateSliderVisualsUtil(timeSliderRef, timeInputRef, currentTime, maxDuration, buffered);
+        updateSliderVisualsUtil(timeSliderRef as React.RefObject<HTMLDivElement>, timeInputRef as React.RefObject<HTMLInputElement>, currentTime, maxDuration, buffered);
     }, []);
 
     // --- Subtitles Toggle ---
@@ -137,7 +145,7 @@ export const useVideoSync = () => {
         setIsPlayerReady(true);
 
         // --- Quality Levels ---
-        const qualityLevels = player.qualityLevels() as any;
+        const qualityLevels = (player as any).qualityLevels();
         qualityLevels.on("addqualitylevel", () => {
             const levels: any[] = [];
             for (let i = 0; i < qualityLevels.length; i++) {
@@ -173,7 +181,7 @@ export const useVideoSync = () => {
             const dur = player.duration() || 0;
             const buff = player.bufferedEnd() || 0;
 
-            updateSliderVisualsUtil(timeSliderRef, timeInputRef, cur, dur, buff);
+            updateSliderVisualsUtil(timeSliderRef as React.RefObject<HTMLDivElement>, timeInputRef as React.RefObject<HTMLInputElement>, cur, dur, buff);
             setDisplayTime(cur);
         });
 
@@ -203,7 +211,7 @@ export const useVideoSync = () => {
             if (!permissionsRef.current.isAdmin && !permissionsRef.current.userControlsAllowed && !isRemoteUpdate.current) {
                 return;
             }
-            updateSliderVisualsUtil(timeSliderRef, timeInputRef, player.currentTime() || 0, player.duration() || 0, 0);
+            updateSliderVisualsUtil(timeSliderRef as React.RefObject<HTMLDivElement>, timeInputRef as React.RefObject<HTMLInputElement>, player.currentTime() || 0, player.duration() || 0, 0);
             if (!isRemoteUpdate.current && !isIntro) sendSync("sync", player.currentTime() || 0, player.paused());
         });
 
@@ -214,6 +222,44 @@ export const useVideoSync = () => {
 
         player.on("error", () => {
             console.error("VideoJS Error:", player.error());
+        });
+
+        // --- Buffering & Playback Stability Events ---
+        player.on("waiting", () => {
+            console.log('[Player] Waiting for data...');
+            setIsWaiting(true);
+        });
+
+        player.on("playing", () => {
+            setIsWaiting(false);
+        });
+
+        player.on("stalled", () => {
+            console.warn('[Player] Stalled - attempting recovery');
+            setIsWaiting(true);
+            const currentTime = player.currentTime();
+
+            // Force buffer refresh by micro-seeking
+            if (currentTime && currentTime > 0.1) {
+                player.currentTime(currentTime - 0.1);
+                setTimeout(() => {
+                    player.currentTime(currentTime);
+                }, 100);
+            }
+        });
+
+        player.on("suspend", () => {
+            console.log('[Player] Suspend event');
+        });
+
+        player.on("canplay", () => {
+            console.log('[Player] Can play');
+            setIsWaiting(false);
+            isSwitchingSource.current = false; // Clear switching flag
+        });
+
+        player.on("canplaythrough", () => {
+            console.log('[Player] Can play through');
         });
 
         return () => {
@@ -230,9 +276,37 @@ export const useVideoSync = () => {
         const player = playerRef.current;
         if (!url || url === "#" || !player) return;
 
+        // GUARD: Prevent double-load of same source
+        if (currentSrcRef.current === url && !url.includes(INTRO_URL)) {
+            console.log('[LoadVideo] Same source, skipping reload:', url);
+            return;
+        }
+
         const isNewIntro = url.includes(INTRO_URL) || url === INTRO_URL;
         setIsIntro(isNewIntro);
+
+        // ✅ SOURCE CLEANUP: Stop current playback before switching
+        if (currentSrcRef.current && currentSrcRef.current !== url) {
+            console.log('[LoadVideo] Cleaning up previous source:', currentSrcRef.current);
+            player.pause();
+            player.currentTime(0);
+        }
+
         isSwitchingSource.current = true;
+
+        // Enter INITIAL_SYNC state for non-intro videos
+        if (!isNewIntro) {
+            setSyncState(SyncState.INITIAL_SYNC);
+            setIsSyncing(true);
+            if (permissionsRef.current.isAdmin) {
+                setShowAdminToast(true);
+            }
+            // Clear any existing timeout
+            if (syncTimeoutRef.current) {
+                clearTimeout(syncTimeoutRef.current);
+                syncTimeoutRef.current = null;
+            }
+        }
 
         if (!isNewIntro && isIntro) {
             player.volume(userVolumeRef.current);
@@ -261,8 +335,8 @@ export const useVideoSync = () => {
         // --- Fetch Sidecar Subtitles ---
         setSubtitleTracks([]);
         const tracks = player.remoteTextTracks();
-        while (tracks.length > 0) {
-            player.removeRemoteTextTrack(tracks[0]);
+        while ((tracks as any).length > 0) {
+            player.removeRemoteTextTrack((tracks as any)[0]);
         }
 
         if (finalSrc && !finalSrc.includes("blob:")) {
@@ -309,7 +383,32 @@ export const useVideoSync = () => {
         if (autoPlay || permissionsRef.current.isAdmin || permissionsRef.current.userControlsAllowed) {
             player.one("loadedmetadata", () => {
                 if (startTime > 0) player.currentTime(startTime);
-                if (autoPlay) {
+
+                // Transition to SYNCED after a short delay (simulating "all users ready")
+                if (!isNewIntro) {
+                    syncTimeoutRef.current = window.setTimeout(() => {
+                        console.log('[Sync] All participants ready, transitioning to SYNCED state');
+                        setSyncState(SyncState.SYNCED);
+                        setIsSyncing(false);
+
+                        // Show success message for 2 seconds before auto-dismiss
+                        setTimeout(() => {
+                            setShowAdminToast(false);
+                        }, 2000);
+
+                        if (autoPlay) {
+                            // Ensure this play event is treated as a remote update to update UI state
+                            isRemoteUpdate.current = true;
+                            const p = player.play();
+                            if (p) p.catch((e) => console.warn("Autoplay blocked", e));
+
+                            // Reset flag shortly after play initiates
+                            setTimeout(() => {
+                                isRemoteUpdate.current = false;
+                            }, 500);
+                        }
+                    }, 2000); // 2 second delay to simulate sync wait
+                } else if (autoPlay) {
                     const p = player.play();
                     if (p) p.catch((e) => console.warn("Autoplay blocked", e));
                 }
@@ -334,11 +433,22 @@ export const useVideoSync = () => {
     }, [loadVideo, send]);
 
     // --- Incoming Sync Events ---
+    const syncStateRef = useRef(syncState);
+    useEffect(() => { syncStateRef.current = syncState; }, [syncState]);
+
     useEffect(() => {
         if (!isPlayerReady) return;
 
         const handleLocalLoad = (event: CustomEvent<{ url: string; autoPlay: boolean }>) => {
-            loadVideo(event.detail.url, event.detail.autoPlay);
+            const { url, autoPlay } = event.detail;
+
+            // GUARD: Don't reload if already in INITIAL_SYNC for this URL
+            if (syncStateRef.current === SyncState.INITIAL_SYNC && currentSrcRef.current === url) {
+                console.log('[LocalLoad] Already syncing this source, skipping:', url);
+                return;
+            }
+
+            loadVideo(url, autoPlay);
         };
         window.addEventListener("play-video", handleLocalLoad as EventListener);
         const handleForceSync = () => {
@@ -377,11 +487,27 @@ export const useVideoSync = () => {
             if (url && url !== currentSrcRef.current) {
                 loadVideo(url, !serverPaused, targetTime);
             } else {
-                if (player.paused() !== serverPaused) {
-                    if (serverPaused) player.pause();
-                    else player.play()?.catch(() => { });
-                }
+                // 1. SEEK FIRST
                 player.currentTime(targetTime);
+
+                // 2. WAIT FOR SEEK TO COMPLETE (Buffer Load)
+                // We use {once: true} to ensure this only fires for this specific seek
+                player.one('seeked', () => {
+                    console.log('[ForceSync] Seek completed, applying play/pause state');
+
+                    if (serverPaused) {
+                        if (!player.paused()) {
+                            console.log('[ForceSync] Pausing player');
+                            player.pause();
+                        }
+                    } else {
+                        if (player.paused()) {
+                            console.log('[ForceSync] Playing player');
+                            const p = player.play();
+                            if (p) p.catch(e => console.warn("[ForceSync] Autoplay blocked/error:", e));
+                        }
+                    }
+                });
             }
 
             setTimeout(() => {
@@ -421,26 +547,38 @@ export const useVideoSync = () => {
             }
 
             if (!serverPaused) {
+                // If drift is massive, HARD SYNC
                 if (absDrift > HARD_SYNC_THRESHOLD) {
                     isRemoteUpdate.current = true;
                     player.currentTime(targetTime);
-                    player.playbackRate(NORMAL_PLAYBACK_RATE);
+                    player.playbackRate(NORMAL_PLAYBACK_RATE); // Enforce 1.0
                     setTimeout(() => {
                         isRemoteUpdate.current = false;
                     }, 800);
-                } else if (absDrift > SOFT_SYNC_THRESHOLD) {
+                }
+                // If drift is minor but noticeable, SOFT SYNC (Variable Speed)
+                else if (absDrift > 0.08) { // Increased from 0.05 to 0.08 to reduce "hunting"
                     const newRate = drift > 0 ? SOFT_SYNC_SPEED_UP : SOFT_SYNC_SLOW_DOWN;
-                    if (player.playbackRate() !== newRate) {
-                        console.log(`Soft Sync: Drift ${drift.toFixed(3)}s, Rate -> ${newRate}`);
+                    // Only apply if we aren't already correcting
+                    if (Math.abs(player.playbackRate() ?? 1 - newRate) > 0.01) {
+                        console.log(`[SoftSync] Drift ${drift.toFixed(3)}s, Adjusting Rate -> ${newRate}`);
                         player.playbackRate(newRate);
                     }
-                } else {
+                }
+                // We are in sync
+                else {
                     if (player.playbackRate() !== NORMAL_PLAYBACK_RATE) {
-                        console.log("Soft Sync Exit: Rate -> 1.0");
+                        console.log("[SoftSync] Stabilized: Rate -> 1.0");
                         player.playbackRate(NORMAL_PLAYBACK_RATE);
                     }
                 }
             } else {
+                // Server is PAUSED
+                // Important: Ensure we are at 1.0 rate even if we pause, so next play starts normal
+                if (player.playbackRate() !== NORMAL_PLAYBACK_RATE) {
+                    player.playbackRate(NORMAL_PLAYBACK_RATE);
+                }
+
                 if (absDrift > PAUSE_SYNC_THRESHOLD) {
                     isRemoteUpdate.current = true;
                     player.currentTime(targetTime);
@@ -462,16 +600,27 @@ export const useVideoSync = () => {
         const player = playerRef.current;
         if (!player) return;
 
+        // GUARD: Block play during INITIAL_SYNC
+        if (syncState === SyncState.INITIAL_SYNC) {
+            console.log('[Sync Guard] Play blocked - waiting for initial sync');
+            return;
+        }
+
         lastLocalInteractionRef.current = Date.now();
         isRemoteUpdate.current = false;
 
         try {
-            if (player.paused()) await player.play();
-            else player.pause();
+            if (player.paused()) {
+                await player.play();
+                if (!isIntro) sendSync("sync", player.currentTime() || 0, false);
+            } else {
+                player.pause();
+                if (!isIntro) sendSync("sync", player.currentTime() || 0, true);
+            }
         } catch (error) {
             console.warn("Interaction interrupted:", error);
         }
-    }, []);
+    }, [syncState, isIntro, sendSync]);
 
     const handleSeek = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const val = parseFloat(e.target.value);
@@ -481,7 +630,7 @@ export const useVideoSync = () => {
             isRemoteUpdate.current = false;
 
             player.currentTime(val);
-            updateSliderVisualsUtil(timeSliderRef, timeInputRef, val, duration, 0);
+            updateSliderVisualsUtil(timeSliderRef as React.RefObject<HTMLDivElement>, timeInputRef as React.RefObject<HTMLInputElement>, val, duration, 0);
             setDisplayTime(val);
         }
     }, [duration]);
@@ -501,6 +650,10 @@ export const useVideoSync = () => {
             if (playerRef.current) playerRef.current.muted(next);
             return next;
         });
+    }, []);
+
+    const dismissSyncToast = useCallback(() => {
+        setShowAdminToast(false);
     }, []);
 
     return {
@@ -528,6 +681,12 @@ export const useVideoSync = () => {
         subtitleTracks,
         currentSubtitle,
 
+        // Sync state
+        syncState,
+        isSyncing,
+        showAdminToast,
+        isBuffering: isWaiting,
+
         // Handlers
         togglePlay,
         handleSeek,
@@ -539,5 +698,6 @@ export const useVideoSync = () => {
         setCurrentAudioTrack,
         toggleSubtitle,
         updateSliderVisuals,
+        dismissSyncToast,
     };
 };

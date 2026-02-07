@@ -112,7 +112,7 @@ export const useAudio = () => {
     // --- RECEIVER INIT ---
     const initAudio = useCallback(() => {
         if (!audioCtxRef.current) {
-            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+            audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({
                 sampleRate: TARGET_SAMPLE_RATE,
                 latencyHint: 'interactive'
             });

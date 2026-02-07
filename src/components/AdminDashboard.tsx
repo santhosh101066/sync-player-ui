@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useWebSocket } from '../context/WebSocketContext';
 
 interface User {
-    id: number;
+    id: string;
     nick: string;
     isAdmin: boolean;
 }
@@ -18,11 +18,11 @@ export const AdminDashboard: React.FC<{ onClose: () => void }> = ({ onClose }) =
 
     useEffect(() => {
         if (lastMessage && lastMessage.type === 'user-list') {
-            setUsers(lastMessage.users);
+            setTimeout(() => setUsers(lastMessage.users), 0);
         }
     }, [lastMessage]);
 
-    const kickUser = (id: number) => {
+    const kickUser = (id: string) => {
         if (confirm("Kick this user?")) {
             send({ type: 'kick-user', targetId: id });
         }

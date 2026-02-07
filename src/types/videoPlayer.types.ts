@@ -2,6 +2,18 @@
 import type Player from "video.js/dist/types/player";
 
 // ============================================================================
+// Sync State Machine
+// ============================================================================
+
+export const SyncState = {
+    IDLE: 'idle',              // No active sync, normal playback
+    INITIAL_SYNC: 'initial',   // Waiting for all users (blocks play)
+    SYNCED: 'synced'           // Initial sync complete, normal operation
+} as const;
+
+export type SyncState = typeof SyncState[keyof typeof SyncState];
+
+// ============================================================================
 // Main Component Props
 // ============================================================================
 
@@ -29,10 +41,10 @@ export interface FloatingMessage {
 export interface VideoSyncState {
     // Player refs
     playerRef: React.RefObject<Player | null>;
-    videoContainerRef: React.RefObject<HTMLDivElement>;
-    canvasRef: React.RefObject<HTMLCanvasElement>;
-    timeSliderRef: React.RefObject<HTMLDivElement>;
-    timeInputRef: React.RefObject<HTMLInputElement>;
+    videoContainerRef: React.RefObject<HTMLDivElement | null>;
+    canvasRef: React.RefObject<HTMLCanvasElement | null>;
+    timeSliderRef: React.RefObject<HTMLDivElement | null>;
+    timeInputRef: React.RefObject<HTMLInputElement | null>;
 
     // Player state
     isPlayerReady: boolean;
@@ -51,6 +63,12 @@ export interface VideoSyncState {
     subtitleTracks: any[];
     currentSubtitle: number;
 
+    // Sync state management
+    syncState: SyncState;
+    isSyncing: boolean;
+    showAdminToast: boolean;
+    isBuffering: boolean;
+
     // Handlers
     togglePlay: (e?: React.MouseEvent | React.TouchEvent | any) => Promise<void>;
     handleSeek: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -62,6 +80,7 @@ export interface VideoSyncState {
     setCurrentAudioTrack: (index: number) => void;
     toggleSubtitle: (index: number) => void;
     updateSliderVisuals: (currentTime: number, maxDuration: number, buffered: number) => void;
+    dismissSyncToast: () => void;
 }
 
 // ============================================================================
@@ -70,8 +89,8 @@ export interface VideoSyncState {
 
 export interface VideoSurfaceProps {
     playerRef: React.RefObject<Player | null>;
-    videoContainerRef: React.RefObject<HTMLDivElement>;
-    canvasRef: React.RefObject<HTMLCanvasElement>;
+    videoContainerRef: React.RefObject<HTMLDivElement | null>;
+    canvasRef: React.RefObject<HTMLCanvasElement | null>;
     ambientMode: boolean;
     isPlayerReady: boolean;
     isLocked: boolean;
@@ -101,8 +120,8 @@ export interface PlayerControlsProps {
     currentSubtitle: number;
 
     // Refs
-    timeSliderRef: React.RefObject<HTMLDivElement>;
-    timeInputRef: React.RefObject<HTMLInputElement>;
+    timeSliderRef: React.RefObject<HTMLDivElement | null>;
+    timeInputRef: React.RefObject<HTMLInputElement | null>;
     playerRef: React.RefObject<Player | null>;
 
     // Handlers
@@ -120,8 +139,8 @@ export interface PlayerControlsProps {
 }
 
 export interface TimeSliderProps {
-    timeSliderRef: React.RefObject<HTMLDivElement>;
-    timeInputRef: React.RefObject<HTMLInputElement>;
+    timeSliderRef: React.RefObject<HTMLDivElement | null>;
+    timeInputRef: React.RefObject<HTMLInputElement | null>;
     duration: number;
     isLocked: boolean;
     onSeek: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -139,7 +158,7 @@ export interface VolumeControlsProps {
 export interface SettingsMenuProps {
     showSettingsMenu: boolean;
     onToggleSettings: () => void;
-    settingsRef: React.RefObject<HTMLDivElement>;
+    settingsRef: React.RefObject<HTMLDivElement | null>;
 
     // Quality
     qualities: any[];
@@ -161,10 +180,12 @@ export interface SettingsMenuProps {
 }
 
 export interface SyncOverlayProps {
+    syncState: SyncState;
     isBuffering: boolean;
-    syncMessage?: string;
     isAdmin: boolean;
     showAdminToast: boolean;
+    onDismissToast?: () => void;
+    participantCount?: { ready: number; total: number };
 }
 
 export interface ChatOverlayProps {

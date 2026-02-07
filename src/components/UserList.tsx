@@ -9,7 +9,7 @@ interface UserListProps {
 export const UserList: React.FC<UserListProps> = ({ activeSpeakers }) => {
     const { connectedUsers, nickname, isAdmin, send } = useWebSocket();
 
-    const toggleMute = (targetId: number) => {
+    const toggleMute = (targetId: string) => {
         if (!isAdmin) return;
         send({ type: 'mute-user', targetId });
     };
