@@ -268,45 +268,36 @@ export const useVideoSync = (): VideoSyncState => {
             isSwitchingSource.current = false; // Clear switching flag
         });
 
+        // --- Buffer Sync Detection using loadeddata event ---
+        // loadeddata fires when the first frame of media has finished loading
+        player.on("loadeddata", () => {
+            const currentTime = player.currentTime() || 0;
+            const isPaused = player.paused();
+            console.log(`[Player] Loaded data - first frame ready (time: ${currentTime.toFixed(2)}s, paused: ${isPaused})`);
+
+            // Send buffer status if we haven't sent it yet for this video load
+            if ((player as any)._lastSentBufferState !== true) {
+                (player as any)._lastSentBufferState = true;
+                console.log(`[BufferSync] (loadeddata event) Video ready - sending buffer status: true`);
+                send({ type: 'buffer-status', buffered: true });
+            } else {
+                console.log(`[BufferSync] (loadeddata event) Already sent buffer status, skipping`);
+            }
+        });
+
+        player.on("canplay", () => {
+            console.log('[Player] Can play');
+        });
+
         player.on("canplaythrough", () => {
             console.log('[Player] Can play through');
         });
-
-        // --- Buffer Sync Monitoring ---
-        const bufferCheckInterval = setInterval(() => {
-            const player = playerRef.current;
-            if (!player || !player.paused()) return; // Only check when paused
-
-            // Only relevant at the start of the video (initial sync)
-            const currentTime = player.currentTime() || 0;
-            if (currentTime > 0.1) return;
-
-            // User Request: Robust check for ALL video types (YouTube, MP4, HLS)
-            // readyState 3 = HAVE_FUTURE_DATA
-            // readyState 4 = HAVE_ENOUGH_DATA
-            // bufferedEnd > 5 = Fallback if readyState is flaky but we have data
-
-            const rState = player.readyState();
-            const bEnd = player.bufferedEnd() || 0;
-
-            const isReadyToPlay = rState >= 3 || bEnd > 5;
-
-            // Use a ref to track sent state to avoid spamming
-            if ((player as any)._lastSentBufferState !== isReadyToPlay) {
-                (player as any)._lastSentBufferState = isReadyToPlay;
-                if (permissionsRef.current.isConnected) {
-                    console.log(`[BufferSync] Sending buffer status: ${isReadyToPlay} (readyState: ${rState}, buffered: ${bEnd.toFixed(1)}s)`);
-                    send({ type: 'buffer-status', buffered: isReadyToPlay });
-                }
-            }
-        }, 1000);
 
         return () => {
             if (player) {
                 player.dispose();
             }
             playerRef.current = null;
-            clearInterval(bufferCheckInterval);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -330,6 +321,11 @@ export const useVideoSync = (): VideoSyncState => {
             console.log('[LoadVideo] Cleaning up previous source:', currentSrcRef.current);
             player.pause();
             player.currentTime(0);
+            // Reset buffer state flag so we send fresh status for new video
+            (player as any)._lastSentBufferState = false;
+            // Immediately notify server that we're no longer buffered
+            send({ type: 'buffer-status', buffered: false });
+            console.log('[LoadVideo] Reset buffer state flag and notified server for new video');
         }
 
         isSwitchingSource.current = true;
