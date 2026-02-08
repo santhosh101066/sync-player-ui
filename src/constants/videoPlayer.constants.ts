@@ -11,13 +11,9 @@ export const AVATAR_COLORS = [
 ];
 
 // Sync thresholds (in seconds)
-export const SOFT_SYNC_THRESHOLD = 0.05; // Start soft sync if drift > 50ms
 export const HARD_SYNC_THRESHOLD = 0.5;  // Jump to position if drift > 500ms
 export const PAUSE_SYNC_THRESHOLD = 0.1; // Sync threshold when paused
 
-// Playback rate adjustments for soft sync
-export const SOFT_SYNC_SPEED_UP = 1.05;
-export const SOFT_SYNC_SLOW_DOWN = 0.95;
 export const NORMAL_PLAYBACK_RATE = 1.0;
 
 // UI timing

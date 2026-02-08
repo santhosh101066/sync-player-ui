@@ -166,6 +166,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         if (msg.type === 'auth-success') {
           // Authentication confirmed!
           setNickname(msg.nick);
+          if (msg.userId) {
+            setMyUserId(msg.userId); // Update to the permanent/hashed ID
+          }
           // Store email for admin page access control
           if (msg.email) {
             localStorage.setItem('userEmail', msg.email);

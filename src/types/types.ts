@@ -35,4 +35,4 @@ export type ServerMessage =
     | { type: 'kick' }
     | { type: 'session-replaced'; text: string }  // NEW: notify user of session replacement
     | { type: 'ping' } | { type: 'pong' }
-    | { type: 'auth-success'; nick: string; picture?: string; email?: string };
+    | { type: 'auth-success'; nick: string; picture?: string; email?: string; userId?: string };

@@ -3,77 +3,49 @@ import { useWebSocket } from '../context/WebSocketContext';
 
 // --- CONFIGURATION ---
 const TARGET_SAMPLE_RATE = 16000;
-const JITTER_BUFFER_MS = 0.06;
+const INACTIVITY_TIMEOUT_MS = 10000; // Cleanup nodes after 10s of silence
 
 // --- OPTIMIZED AUDIO WORKLET ---
 const WORKLET_CODE = `
 class MicProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // 1. LOWER THRESHOLD:
-    // Reduced from 0.01 to 0.008 to catch softer word endings better.
-    this.silenceThreshold = 0.008; 
-    
-    // 2. LONGER HANG TIME (The Fix):
-    // Increased from 3200 (200ms) to 8000 (500ms).
-    // The mic will stay open for 0.5 seconds after you stop talking
-    // so the "tail" of your voice is never cut off.
-    this.HANG_TIME = 8000; 
-    
+    this.silenceThreshold = 0.002; // More sensitive to pick up quiet speech
+    this.HANG_TIME = 16000; // 1 second hang time to prevent choppy audio
     this.hangoverFrames = 0;
     this.chunkBuffer = new Int16Array(512); 
     this.chunkIndex = 0;
-
     this.prevIn = 0;
     this.prevOut = 0;
   }
 
-  process(inputs, outputs, parameters) {
+  process(inputs, outputs) {
     const input = inputs[0];
     if (!input || input.length === 0) return true;
-
     const channel = input[0];
-    const alpha = 0.985; 
     const ratio = sampleRate / 16000; 
 
     for (let i = 0; i < channel.length; i += ratio) {
        const idx = Math.floor(i);
-       if (idx >= channel.length) break;
-
        const x = channel[idx];
-       
-       // High Pass Filter
-       const y = alpha * (this.prevOut + x - this.prevIn);
-       this.prevIn = x;
-       this.prevOut = y;
+       const y = 0.995 * (this.prevOut + x - this.prevIn); // Smoother high-pass
+       this.prevIn = x; this.prevOut = y;
 
-       // Gate Logic
        const absY = Math.abs(y);
-       if (absY > this.silenceThreshold) {
-           this.hangoverFrames = this.HANG_TIME;
-       }
+       if (absY > this.silenceThreshold) this.hangoverFrames = this.HANG_TIME;
 
        if (this.hangoverFrames > 0) {
            if (absY <= this.silenceThreshold) this.hangoverFrames--;
-
            if (this.chunkIndex < this.chunkBuffer.length) {
-                // Soft Clipping
                 let sample = y;
                 if (sample > 1.0) sample = 1.0;
                 if (sample < -1.0) sample = -1.0;
-
                 this.chunkBuffer[this.chunkIndex] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
                 this.chunkIndex++;
            }
-       } else if (this.chunkIndex > 0) {
-           this.flush();
-       }
-
-       if (this.chunkIndex >= this.chunkBuffer.length) {
-           this.flush();
-       }
+       } else if (this.chunkIndex > 0) { this.flush(); }
+       if (this.chunkIndex >= this.chunkBuffer.length) this.flush();
     }
-    
     return true;
   }
 
@@ -84,7 +56,59 @@ class MicProcessor extends AudioWorkletProcessor {
     this.chunkIndex = 0;
   }
 }
+
+class ReceiverProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.bufferSize = Math.floor(sampleRate * 3);
+    this.buffer = new Float32Array(this.bufferSize);
+    this.writePtr = 0;
+    this.readPtr = 0;
+    this.isPlaying = false;
+    this.minBuffer = Math.floor(0.15 * sampleRate); // Increased to 150ms to remove jitter
+    this.maxBuffer = Math.floor(0.30 * sampleRate); // 300ms drift limit
+
+    this.port.onmessage = (e) => {
+        if (e.data === 'stop') { this.isPlaying = false; return; }
+        const data = e.data;
+        for (let i = 0; i < data.length; i++) {
+            this.buffer[this.writePtr] = data[i];
+            this.writePtr = (this.writePtr + 1) % this.bufferSize;
+        }
+    };
+  }
+
+  process(inputs, outputs) {
+     const channel = outputs[0][0];
+     if (!channel) return true;
+
+     let available = (this.writePtr - this.readPtr + this.bufferSize) % this.bufferSize;
+
+     if (!this.isPlaying) {
+         if (available >= this.minBuffer) this.isPlaying = true;
+         else { channel.fill(0); return true; }
+     }
+
+     if (available < channel.length) {
+         this.isPlaying = false; // Underrun
+         channel.fill(0);
+         return true;
+     }
+
+     if (available > this.maxBuffer) {
+         const skip = available - this.minBuffer;
+         this.readPtr = (this.readPtr + skip) % this.bufferSize;
+     }
+
+     for (let i = 0; i < channel.length; i++) {
+         channel[i] = this.buffer[this.readPtr];
+         this.readPtr = (this.readPtr + 1) % this.bufferSize;
+     }
+     return true;
+  }
+}
 registerProcessor('mic-processor', MicProcessor);
+registerProcessor('receiver-processor', ReceiverProcessor);
 `;
 
 export const useAudio = () => {
@@ -98,173 +122,137 @@ export const useAudio = () => {
     const audioCtxRef = useRef<AudioContext | null>(null);
     const micStreamRef = useRef<MediaStream | null>(null);
     const workletNodeRef = useRef<AudioWorkletNode | null>(null);
-    const peerAudioStateRef = useRef<Record<string, { nextTime: number }>>({});  // Changed from Record<number, ...>
-    const isResumingRef = useRef(false);
-    const speakerActivityRef = useRef<Map<string, number>>(new Map());  // Changed from Map<number, number>
-    const myUserIdRef = useRef<string | null>(myUserId);  // Changed from number to string
 
-    useEffect(() => {
-        myUserIdRef.current = myUserId;
-    }, [myUserId]);
+    // Track Node + Gain for global volume control
+    const receiverNodesRef = useRef<Map<string, { node: AudioWorkletNode, gain: GainNode }>>(new Map());
+    const moduleLoadedRef = useRef(false);
+    const speakerActivityRef = useRef<Map<string, number>>(new Map());
 
-    const handleSetVolume = (val: number) => { setVolume(val); volumeRef.current = val; };
+    const handleSetVolume = (val: number) => {
+        setVolume(val);
+        volumeRef.current = val;
+        // Apply volume to all current speakers instantly
+        receiverNodesRef.current.forEach(({ gain }) => {
+            gain.gain.setTargetAtTime(val, audioCtxRef.current?.currentTime || 0, 0.01);
+        });
+    };
 
-    // --- RECEIVER INIT ---
-    const initAudio = useCallback(() => {
+    const initAudio = useCallback(async () => {
         if (!audioCtxRef.current) {
-            audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)({
+            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
                 sampleRate: TARGET_SAMPLE_RATE,
                 latencyHint: 'interactive'
             });
         }
-        if (audioCtxRef.current.state === 'suspended') {
-            audioCtxRef.current.resume().then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true));
+        const ctx = audioCtxRef.current;
+        if (ctx.state === 'suspended') await ctx.resume().catch(() => setAudioBlocked(true));
+
+        if (!moduleLoadedRef.current) {
+            const blob = new Blob([WORKLET_CODE], { type: 'application/javascript' });
+            await ctx.audioWorklet.addModule(URL.createObjectURL(blob));
+            moduleLoadedRef.current = true;
         }
-        return audioCtxRef.current;
+        return ctx;
     }, []);
 
-    // --- RECEIVER LOGIC ---
     useEffect(() => {
-        const handleAudioData = (data: ArrayBuffer) => {
-            if (!audioCtxRef.current) initAudio();
-            const ctx = audioCtxRef.current!;
+        const handleAudioData = async (data: ArrayBuffer) => {
+            const ctx = await initAudio();
+            if (!ctx || !moduleLoadedRef.current) return;
 
-            if (ctx.state === 'suspended' && !isResumingRef.current) {
-                isResumingRef.current = true;
-                ctx.resume().finally(() => isResumingRef.current = false);
+            const userIdBytes = new Uint8Array(data.slice(0, 64));
+            let userId = "";
+            for (let i = 0; i < 64; i++) {
+                if (userIdBytes[i] === 0) break;
+                userId += String.fromCharCode(userIdBytes[i]);
             }
-
-            // Parse userId as string (first 32 bytes for userId hash)
-            const userIdBytes = new Uint8Array(data.slice(0, 32));
-            const userId = Array.from(userIdBytes).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
             speakerActivityRef.current.set(userId, Date.now());
 
-            if (ctx.state === 'suspended') return;
-
-            const pcmBuffer = data.slice(32);  // Skip 32-byte userId header
-            const int16Data = new Int16Array(pcmBuffer);
-            const float32Data = new Float32Array(int16Data.length);
-            for (let i = 0; i < int16Data.length; i++) {
-                float32Data[i] = int16Data[i] / 32768.0;
+            let peer = receiverNodesRef.current.get(userId);
+            if (!peer) {
+                const node = new AudioWorkletNode(ctx, 'receiver-processor');
+                const gain = ctx.createGain();
+                gain.gain.value = volumeRef.current;
+                node.connect(gain).connect(ctx.destination);
+                peer = { node, gain };
+                receiverNodesRef.current.set(userId, peer);
             }
 
-            if (!peerAudioStateRef.current[userId]) {
-                peerAudioStateRef.current[userId] = { nextTime: ctx.currentTime + JITTER_BUFFER_MS };
-            }
-            const peer = peerAudioStateRef.current[userId];
+            const float32Data = new Float32Array(new Int16Array(data.slice(64)).length);
+            const int16 = new Int16Array(data.slice(64));
+            for (let i = 0; i < int16.length; i++) float32Data[i] = int16[i] / 32768.0;
 
-            const buffer = ctx.createBuffer(1, float32Data.length, TARGET_SAMPLE_RATE);
-            buffer.getChannelData(0).set(float32Data);
-
-            const source = ctx.createBufferSource();
-            source.buffer = buffer;
-            const gain = ctx.createGain();
-            gain.gain.value = volumeRef.current;
-            source.connect(gain);
-            gain.connect(ctx.destination);
-
-            const now = ctx.currentTime;
-
-            if (peer.nextTime < now) {
-                peer.nextTime = now;
-            }
-            else if (peer.nextTime > now + 0.2) {
-                peer.nextTime = now + JITTER_BUFFER_MS;
-            }
-
-            source.start(peer.nextTime);
-            peer.nextTime += buffer.duration;
+            peer.node.port.postMessage(float32Data);
         };
 
         const unsubscribe = subscribeToAudio(handleAudioData);
         return () => unsubscribe();
     }, [subscribeToAudio, initAudio]);
 
-    // --- MIC LOGIC ---
-    const toggleMic = useCallback(async () => {
-        if (isRecording) {
-            micStreamRef.current?.getTracks().forEach(t => t.stop());
-            micStreamRef.current = null;
-            if (workletNodeRef.current) {
-                workletNodeRef.current.port.postMessage('stop');
-                workletNodeRef.current.disconnect();
-            }
-            workletNodeRef.current = null;
-            setIsRecording(false);
-        } else {
-            try {
-                if (!myUserId) {
-                    alert("Not connected to server yet!");
-                    return;
-                }
-                const ctx = initAudio();
-                try {
-                    const blob = new Blob([WORKLET_CODE], { type: 'application/javascript' });
-                    await ctx.audioWorklet.addModule(URL.createObjectURL(blob));
-                } catch (e) {
-                    console.error("Worklet load error:", e);
-                }
-
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        autoGainControl: true,
-                        noiseSuppression: false,
-                        //@ts-ignore
-                        latency: 0,
-                        sampleRate: TARGET_SAMPLE_RATE,
-                        channelCount: 1,
-                    }
-                });
-                micStreamRef.current = stream;
-
-                const source = ctx.createMediaStreamSource(stream);
-                const workletNode = new AudioWorkletNode(ctx, 'mic-processor');
-                workletNodeRef.current = workletNode;
-
-                workletNode.port.onmessage = (e) => {
-                    const pcmData = e.data;
-                    const currentId = myUserIdRef.current;
-                    if (currentId === null) return;
-
-                    // Encode userId as first 32 bytes (simplified: use first 32 chars of hash)
-                    const userIdBytes = new Uint8Array(32);
-                    for (let i = 0; i < Math.min(currentId.length, 32); i++) {
-                        userIdBytes[i] = currentId.charCodeAt(i);
-                    }
-
-                    const totalLen = 32 + pcmData.byteLength;
-                    const buffer = new ArrayBuffer(totalLen);
-                    const bufferView = new Uint8Array(buffer);
-                    bufferView.set(userIdBytes, 0);
-                    const destInt16 = new Int16Array(buffer, 32);
-                    const srcInt16 = new Int16Array(pcmData);
-                    destInt16.set(srcInt16);
-
-                    sendAudio(buffer);
-                };
-
-                source.connect(workletNode);
-                setIsRecording(true);
-            } catch (e) {
-                console.error("Mic Error", e);
-                alert("Mic Error: " + e);
-            }
-        }
-    }, [isRecording, initAudio, sendAudio, myUserId]);
-
-    // Active Speaker Poller
+    // Active Speaker Poller & Cleanup
     useEffect(() => {
         const interval = setInterval(() => {
             const now = Date.now();
             const active: string[] = [];
+
             speakerActivityRef.current.forEach((lastTime, userId) => {
-                if (now - lastTime < 1000) active.push(userMap[userId] || `User ${userId}`);
+                // 1. Add to active speakers list
+                if (now - lastTime < 1000) active.push(userMap[userId] || userId);
+
+                // 2. Cleanup inactive nodes to save memory/CPU
+                if (now - lastTime > INACTIVITY_TIMEOUT_MS) {
+                    const peer = receiverNodesRef.current.get(userId);
+                    if (peer) {
+                        peer.node.disconnect();
+                        peer.gain.disconnect();
+                        receiverNodesRef.current.delete(userId);
+                        speakerActivityRef.current.delete(userId);
+                    }
+                }
             });
             setActiveSpeakers(active);
-        }, 500);
+        }, 1000);
         return () => clearInterval(interval);
     }, [userMap]);
+
+    const toggleMic = useCallback(async () => {
+        if (isRecording) {
+            micStreamRef.current?.getTracks().forEach(t => t.stop());
+            workletNodeRef.current?.disconnect();
+            setIsRecording(false);
+        } else {
+            try {
+                if (!myUserId) return alert("Connect first!");
+                const ctx = await initAudio();
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: true,
+                        autoGainControl: false, // Prevent volume pumping
+                        sampleRate: TARGET_SAMPLE_RATE
+                    }
+                });
+                micStreamRef.current = stream;
+                const source = ctx.createMediaStreamSource(stream);
+                const booster = ctx.createGain();
+                booster.gain.value = 2.0; // Manual boost (200%)
+
+                const workletNode = new AudioWorkletNode(ctx, 'mic-processor');
+                workletNodeRef.current = workletNode;
+
+                workletNode.port.onmessage = (e) => {
+                    const userIdBytes = new Uint8Array(64);
+                    for (let i = 0; i < Math.min(myUserId.length, 64); i++) userIdBytes[i] = myUserId.charCodeAt(i);
+                    const buffer = new ArrayBuffer(64 + e.data.byteLength);
+                    new Uint8Array(buffer).set(userIdBytes, 0);
+                    new Int16Array(buffer, 64).set(new Int16Array(e.data));
+                    sendAudio(buffer);
+                };
+                source.connect(booster).connect(workletNode);
+                setIsRecording(true);
+            } catch (e) { console.error("Mic Error", e); }
+        }
+    }, [isRecording, initAudio, sendAudio, myUserId]);
 
     return { isRecording, toggleMic, volume, setVolume: handleSetVolume, initAudio, activeSpeakers, audioBlocked };
 };

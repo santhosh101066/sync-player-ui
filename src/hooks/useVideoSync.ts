@@ -8,8 +8,6 @@ import {
     INTRO_URL,
     HARD_SYNC_THRESHOLD,
     PAUSE_SYNC_THRESHOLD,
-    SOFT_SYNC_SPEED_UP,
-    SOFT_SYNC_SLOW_DOWN,
     NORMAL_PLAYBACK_RATE,
 
     REMOTE_UPDATE_LOCK_DURATION,
@@ -135,6 +133,10 @@ export const useVideoSync = (): VideoSyncState => {
             html5: {
                 vhs: {
                     overrideNative: !videojs.browser.IS_SAFARI,
+                    enableLowInitialPlaylist: true,
+                    smoothQualityChange: true,
+                    useBandwidthFromLocalStorage: true,
+                    limitRenditionByPlayerDimensions: true,
                 },
             },
         });
@@ -555,15 +557,6 @@ export const useVideoSync = (): VideoSyncState => {
                     setTimeout(() => {
                         isRemoteUpdate.current = false;
                     }, 800);
-                }
-                // If drift is minor but noticeable, SOFT SYNC (Variable Speed)
-                else if (absDrift > 0.08) { // Increased from 0.05 to 0.08 to reduce "hunting"
-                    const newRate = drift > 0 ? SOFT_SYNC_SPEED_UP : SOFT_SYNC_SLOW_DOWN;
-                    // Only apply if we aren't already correcting
-                    if (Math.abs(player.playbackRate() ?? 1 - newRate) > 0.01) {
-                        console.log(`[SoftSync] Drift ${drift.toFixed(3)}s, Adjusting Rate -> ${newRate}`);
-                        player.playbackRate(newRate);
-                    }
                 }
                 // We are in sync
                 else {

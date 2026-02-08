@@ -257,15 +257,15 @@ export const Session: React.FC = () => {
                                             <input
                                                 type="range"
                                                 min="0"
-                                                max="2"
+                                                max="15"
                                                 step="0.01"
                                                 value={volume}
                                                 onInput={(e) => setVolume(parseFloat(e.currentTarget.value))}
                                                 className="absolute inset-0 w-full h-full opacity-0 z-[100] cursor-pointer"
                                             />
                                             <div className="w-full h-1 bg-white/30 !rounded-full relative cursor-pointer">
-                                                <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 2) * 100}%` }} />
-                                                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 2) * 100}%` }} />
+                                                <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 15) * 100}%` }} />
+                                                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 15) * 100}%` }} />
                                             </div>
                                         </div>
                                     </div>
@@ -305,15 +305,15 @@ export const Session: React.FC = () => {
                                     <input
                                         type="range"
                                         min="0"
-                                        max="2"
+                                        max="15"
                                         step="0.01"
                                         value={volume}
                                         onInput={(e) => setVolume(parseFloat(e.currentTarget.value))}
                                         className="absolute inset-0 w-full h-full opacity-0 z-[100] cursor-pointer"
                                     />
                                     <div className="w-full h-1 bg-white/30 !rounded-full relative cursor-pointer">
-                                        <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 2) * 100}%` }} />
-                                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 2) * 100}%` }} />
+                                        <div className="absolute top-0 left-0 h-full bg-white !rounded-full pointer-events-none" style={{ width: `${(volume / 15) * 100}%` }} />
+                                        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 bg-white !rounded-full pointer-events-none shadow-sm left-[var(--slider-fill)]" style={{ left: `${(volume / 15) * 100}%` }} />
                                     </div>
                                 </div>
                             </div>

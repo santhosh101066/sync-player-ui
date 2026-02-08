@@ -10,31 +10,33 @@ export const StatusIndicators: React.FC<StatusIndicatorsProps> = ({
     paused,
 }) => {
     return (
-        <div
-            className={`absolute inset-0 z-20 pointer-events-none transition-opacity duration-300 ${controlsVisible || paused ? "opacity-100" : "opacity-0"
-                } group-hover/root:opacity-100`}
-        >
-            {/* Connection Status - Top Right */}
+        <>
             <div
-                className={`absolute top-5 right-5 px-3 py-1.5 rounded-full text-sm flex items-center gap-1.5 shadow-sm ${!isConnected
+                className={`absolute inset-0 z-20 pointer-events-none transition-opacity duration-300 ${controlsVisible || paused ? "opacity-100" : "opacity-0"
+                    } group-hover/root:opacity-100`}
+            >
+                {/* Connection Status - Top Right */}
+                <div
+                    className={`absolute top-5 right-5 px-3 py-1.5 rounded-full text-sm flex items-center gap-1.5 shadow-sm ${!isConnected
                         ? "bg-red-500/20 border border-red-500 text-red-500"
                         : "bg-green-500/20 border border-green-500 text-green-500"
-                    }`}
-            >
-                <div className="w-2 h-2 rounded-full bg-current" />
-                {isConnected ? "Live" : "Offline"}
+                        }`}
+                >
+                    <div className="w-2 h-2 rounded-full bg-current" />
+                    {isConnected ? "Live" : "Offline"}
+                </div>
+
+                {/* Lock Indicator - Top Left */}
+                {isLocked && (
+                    <div className="absolute top-6 left-6 text-white/40 p-1 flex items-center justify-center">
+                        <Lock size={16} strokeWidth={1.5} />
+                    </div>
+                )}
             </div>
 
-            {/* Lock Indicator - Top Left */}
-            {isLocked && (
-                <div className="absolute top-6 left-6 text-white/40 p-1 flex items-center justify-center">
-                    <Lock size={16} strokeWidth={1.5} />
-                </div>
-            )}
-
-            {/* Active Speakers - Top Right (below connection status) */}
+            {/* Active Speakers - Always Visible */}
             {activeSpeakers.length > 0 && (
-                <div className="absolute top-[60px] right-5 flex flex-col items-end gap-2">
+                <div className="absolute top-[60px] right-5 flex flex-col items-end gap-2 z-20 pointer-events-none">
                     {activeSpeakers.map((name, i) => (
                         <div
                             key={i}
@@ -62,6 +64,6 @@ export const StatusIndicators: React.FC<StatusIndicatorsProps> = ({
                     ))}
                 </div>
             )}
-        </div>
+        </>
     );
 };
