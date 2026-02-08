@@ -7,6 +7,7 @@ import { Library } from "../components/Library";
 import { AdminDashboard } from "../components/AdminDashboard";
 import { UserList } from "../components/UserList";
 import { useAudio } from "../hooks/useAudio";
+import { useQueue } from "../hooks/useQueue";
 import {
     Mic,
     MicOff,
@@ -24,9 +25,13 @@ import {
     FolderOpen,
     Users,
     Youtube,
+    ListVideo,
+    Upload,
     Zap // Restored missing Zap import
 } from "lucide-react";
 import YouTubeBrowser from "../components/YouTubeBrowser";
+import { CookiesModal } from "../components/CookiesModal";
+import { VideoQueue } from "../components/VideoQueue";
 import "../App.css";
 import "../App.css";
 
@@ -88,12 +93,16 @@ export const Session: React.FC = () => {
     const [showAdminDashboard, setShowAdminDashboard] = useState(false);
     const [showMobileControls, setShowMobileControls] = useState(false);
     const [showYouTubeBrowser, setShowYouTubeBrowser] = useState(false);
-    const [activeTab, setActiveTab] = useState<"chat" | "library" | "users">(
+    const [showCookiesModal, setShowCookiesModal] = useState(false);
+    const [activeTab, setActiveTab] = useState<"chat" | "library" | "users" | "queue">(
         "chat"
     );
     // 4. Form Inputs
     const [urlInput, setUrlInput] = useState("");
     const currentServerUrlRef = useRef(""); // To prevent overwriting user input
+
+    // Queue hook
+    const { queue, currentIndex, addToQueue, playNext, playNow, removeItem, reorderQueue } = useQueue();
 
     // --- Effect: Sync Input Box with Actual Playing Video ---
     // --- Effect: Sync Input Box with Actual Playing Video ---
@@ -141,11 +150,10 @@ export const Session: React.FC = () => {
         }
     };
 
-    // Callback from YouTubeBrowser
-    const handleYouTubeSelect = (url: string) => {
-        handleURLChange(url);
-        setShowYouTubeBrowser(false);
-    }
+
+    const handlePlayNowFromQueue = (item: any) => {
+        handleURLChange(item.url);
+    };
 
     const handleSync = () => {
         // Dispatch a custom event that VideoPlayer will listen for
@@ -240,6 +248,9 @@ export const Session: React.FC = () => {
                                         <button onClick={toggleProxy} className={`flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 ${proxyEnabled ? "text-indigo-400" : "text-zinc-400"}`}>
                                             <Globe size={18} /> Proxy
                                         </button>
+                                        <button onClick={() => setShowCookiesModal(true)} className="flex-1 h-10 bg-white/5 hover:bg-white/10 rounded-lg flex items-center justify-center gap-2 text-purple-400">
+                                            <Upload size={18} /> Cookies
+                                        </button>
                                     </div>
                                 </div>
                             )}
@@ -288,6 +299,9 @@ export const Session: React.FC = () => {
                                 </button>
                                 <button onClick={toggleProxy} className={`hover:bg-white/10 p-2 rounded-lg transition-colors ${proxyEnabled ? "text-indigo-400" : "text-zinc-400 hover:text-white"}`} title="Proxy">
                                     <Globe size={18} />
+                                </button>
+                                <button onClick={() => setShowCookiesModal(true)} className="hover:bg-white/10 p-2 rounded-lg text-zinc-400 hover:text-purple-400 transition-colors" title="Manage Cookies">
+                                    <Upload size={18} />
                                 </button>
                                 <div className="w-px h-6 bg-white/10 mx-1" />
                             </>
@@ -375,6 +389,17 @@ export const Session: React.FC = () => {
                         >
                             <MessageSquare size={18} strokeWidth={1.5} /> Chat
                         </button>
+                        <button
+                            className={`tab-btn ${activeTab === "queue" ? "active" : ""}`}
+                            onClick={() => setActiveTab("queue")}
+                        >
+                            <ListVideo size={18} strokeWidth={1.5} /> Queue
+                            {queue.length > 0 && (
+                                <span className="ml-1 px-1.5 py-0.5 bg-indigo-500 text-white text-[10px] font-bold rounded-full">
+                                    {queue.length}
+                                </span>
+                            )}
+                        </button>
                         {isAdmin && (
                             <button
                                 className={`tab-btn ${activeTab === "library" ? "active" : ""}`}
@@ -393,6 +418,16 @@ export const Session: React.FC = () => {
 
                     <div className="flex-1 overflow-hidden flex flex-col">
                         {activeTab === "chat" && <Chat />}
+                        {activeTab === "queue" && (
+                            <VideoQueue
+                                queue={queue}
+                                currentIndex={currentIndex}
+                                onRemove={removeItem}
+                                onReorder={reorderQueue}
+                                onPlayNow={handlePlayNowFromQueue}
+                                isAdmin={isAdmin}
+                            />
+                        )}
                         {activeTab === "library" && <Library />}
                         {activeTab === "users" && (
                             <UserList activeSpeakers={activeSpeakers} />
@@ -416,8 +451,16 @@ export const Session: React.FC = () => {
             <YouTubeBrowser
                 isOpen={showYouTubeBrowser}
                 onClose={() => setShowYouTubeBrowser(false)}
-                onSelectVideo={handleYouTubeSelect}
+                onAddToQueue={addToQueue}
+                onPlayNext={playNext}
+                onPlayNow={playNow}
                 isAdmin={isAdmin}
+            />
+
+            {/* Cookies Management Modal */}
+            <CookiesModal
+                isOpen={showCookiesModal}
+                onClose={() => setShowCookiesModal(false)}
             />
         </div >
     );

@@ -6,6 +6,21 @@ export interface ConnectedUser {
     picture?: string;
 }
 
+export interface QueueVideo {
+    videoId: string;
+    url: string;
+    title: string;
+    thumbnail: string;
+    author: string;
+    duration: string;
+}
+
+export interface QueueItem extends QueueVideo {
+    id: string;
+    addedBy: string;
+    addedAt: number;
+}
+
 // ... ClientMessage stays the same ...
 export type ClientMessage =
     | { type: 'identify'; nick: string }
@@ -19,6 +34,13 @@ export type ClientMessage =
     | { type: 'kick-user'; targetId: string }  // Changed from number to string
     | { type: 'toggle-proxy'; value: boolean }
     | { type: 'get-users' }
+    | { type: 'queue-add'; video: QueueVideo }
+    | { type: 'queue-play-next'; video: QueueVideo }
+    | { type: 'queue-play-now'; video: QueueVideo }
+    | { type: 'queue-remove'; itemId: string }
+    | { type: 'queue-reorder'; fromIndex: number; toIndex: number }
+    | { type: 'queue-get' }
+    | { type: 'video-ended' }
     | { type: 'ping' } | { type: 'pong' };
 
 export type ServerMessage =
@@ -34,5 +56,6 @@ export type ServerMessage =
     | { type: 'load'; url: string }
     | { type: 'kick' }
     | { type: 'session-replaced'; text: string }  // NEW: notify user of session replacement
+    | { type: 'queue-state'; queue: QueueItem[]; currentIndex: number }
     | { type: 'ping' } | { type: 'pong' }
     | { type: 'auth-success'; nick: string; picture?: string; email?: string; userId?: string };

@@ -226,6 +226,14 @@ export const useVideoSync = (): VideoSyncState => {
             console.error("VideoJS Error:", player.error());
         });
 
+        player.on("ended", () => {
+            console.log('[Player] Video ended');
+            // Notify server for queue auto-advance
+            if (!isIntro) {
+                send({ type: 'video-ended' });
+            }
+        });
+
         // --- Buffering & Playback Stability Events ---
         player.on("waiting", () => {
             console.log('[Player] Waiting for data...');
@@ -409,7 +417,7 @@ export const useVideoSync = (): VideoSyncState => {
                                 isRemoteUpdate.current = false;
                             }, 500);
                         }
-                    }, 2000); // 2 second delay to simulate sync wait
+                    }, 500); // 500ms delay for faster auto-play on manual load
                 } else if (autoPlay) {
                     const p = player.play();
                     if (p) p.catch((e) => console.warn("Autoplay blocked", e));
