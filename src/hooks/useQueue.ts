@@ -22,22 +22,27 @@ export const useQueue = () => {
         send({ type: 'queue-get' });
     }, [send]);
 
+    // Helper to truncate long titles
+    const truncate = (str: string, n = 40) => {
+        return (str.length > n) ? str.slice(0, n - 1) + '...' : str;
+    };
+
     // Queue operations
     const addToQueue = (video: QueueVideo) => {
         send({ type: 'queue-add', video });
-        showToast(`Added "${video.title}" to queue`, 'success');
+        showToast(`Added "${truncate(video.title)}" to queue`, 'success');
     };
 
     const playNext = (video: QueueVideo) => {
         if (!isAdmin) return;
         send({ type: 'queue-play-next', video });
-        showToast(`"${video.title}" will play next`, 'info');
+        showToast(`"${truncate(video.title)}" will play next`, 'info');
     };
 
     const playNow = (video: QueueVideo) => {
         if (!isAdmin) return;
         send({ type: 'queue-play-now', video });
-        showToast(`Playing "${video.title}" now`, 'info');
+        showToast(`Playing "${truncate(video.title)}" now`, 'info');
     };
 
     const removeItem = (itemId: string) => {
@@ -45,7 +50,7 @@ export const useQueue = () => {
         const item = queue.find(q => q.id === itemId);
         send({ type: 'queue-remove', itemId });
         if (item) {
-            showToast(`Removed "${item.title}" from queue`, 'info');
+            showToast(`Removed "${truncate(item.title)}" from queue`, 'info');
         }
     };
 

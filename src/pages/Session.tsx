@@ -219,15 +219,30 @@ export const Session: React.FC = () => {
                                 <span className="hidden sm:inline">YOUTUBE</span>
                             </button>
                         </div>
-                    ) : userControlsAllowed ? (
-                        <div className="hidden lg:flex items-center gap-2 text-green-400/50 text-sm font-medium select-none">
-                            <Unlock size={14} />
-                            <span>Controls enabled</span>
-                        </div>
                     ) : (
-                        <div className="hidden lg:flex items-center gap-2 text-white/20 text-sm font-medium select-none">
-                            <Lock size={14} />
-                            <span>Controls restricted to admin</span>
+                        <div className="w-full max-w-xl relative flex items-center gap-2">
+                            {/* YouTube Button - Always visible for non-admin */}
+                            <button
+                                onClick={() => setShowYouTubeBrowser(true)}
+                                className="px-4 h-10 bg-[#FF0000]/20 hover:bg-[#FF0000]/30 text-red-500 hover:text-white border border-red-500/20 hover:border-red-500/50 text-sm font-bold rounded-lg transition-all flex items-center gap-2"
+                                title="Browse YouTube"
+                            >
+                                <Youtube size={18} />
+                                <span>Browse YouTube</span>
+                            </button>
+
+                            {/* Status Text - Conditional */}
+                            {userControlsAllowed ? (
+                                <div className="hidden lg:flex items-center gap-2 text-green-400/50 text-sm font-medium select-none ml-4">
+                                    <Unlock size={14} />
+                                    <span>Controls enabled</span>
+                                </div>
+                            ) : (
+                                <div className="hidden lg:flex items-center gap-2 text-white/20 text-sm font-medium select-none ml-4">
+                                    <Lock size={14} />
+                                    <span>Controls restricted</span>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -252,6 +267,20 @@ export const Session: React.FC = () => {
                                             <Upload size={18} /> Cookies
                                         </button>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* YouTube Button for Normal Users Mobile - Always visible for non-admin */}
+                            {!isAdmin && (
+                                <div>
+                                    <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Browse Content</div>
+                                    <button
+                                        onClick={() => setShowYouTubeBrowser(true)}
+                                        className="w-full h-12 bg-[#FF0000]/20 hover:bg-[#FF0000]/30 text-red-500 hover:text-white border border-red-500/20 hover:border-red-500/50 text-sm font-bold rounded-lg transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <Youtube size={20} />
+                                        <span>Browse YouTube</span>
+                                    </button>
                                 </div>
                             )}
 
