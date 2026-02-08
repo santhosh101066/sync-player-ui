@@ -48,7 +48,7 @@ interface WebSocketContextType {
   addLocalMessage: (text: string, image?: string, picture?: string) => void;
   currentVideoState: VideoState | null;
   userPicture?: string;
-  bufferProgress: { ready: number; total: number; allReady: boolean } | null;
+  bufferProgress: { ready: number; total: number; allReady: boolean; unreadyUsers?: string[] } | null;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(
@@ -79,7 +79,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   const [proxyEnabled, setProxyEnabled] = useState(true);
   const [chatMessages, setChatMessages] = useState<UIChatMessage[]>([]);
   const [currentVideoState, setCurrentVideoState] = useState<VideoState | null>(null);
-  const [bufferProgress, setBufferProgress] = useState<{ ready: number; total: number; allReady: boolean } | null>(null);
+  const [bufferProgress, setBufferProgress] = useState<{ ready: number; total: number; allReady: boolean; unreadyUsers?: string[] } | null>(null);
 
   // Refs for Audio
   const audioListenersRef = useRef<Set<(data: ArrayBuffer) => void>>(new Set());
@@ -220,6 +220,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
             timestamp: Date.now(),
             isForce: msg.type === 'forceSync'
           }));
+
+          // CLEAR BUFFER PROGRESS IF PLAYING
+          if (!msg.paused) {
+            setBufferProgress(null);
+          }
         }
         if (msg.type === 'load') {
           setCurrentVideoState({
@@ -234,7 +239,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
           setBufferProgress({
             ready: msg.ready,
             total: msg.total,
-            allReady: msg.allReady
+            allReady: msg.allReady,
+            unreadyUsers: msg.unreadyUsers
           });
         }
 
@@ -255,6 +261,17 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   const send = useCallback((data: ClientMessage) => {
     if (socket?.connected) {
       socket.emit("message", data);
+
+      // Update local state immediately for sync messages to reflect in UI
+      if (data.type === 'sync' || data.type === 'forceSync') {
+        setCurrentVideoState(prev => ({
+          url: data.url || prev?.url || "",
+          time: data.time,
+          paused: data.paused,
+          timestamp: Date.now(),
+          isForce: data.type === 'forceSync'
+        }));
+      }
     }
   }, [socket]);
 

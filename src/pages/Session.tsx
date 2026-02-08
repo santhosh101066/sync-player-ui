@@ -27,13 +27,16 @@ import {
     Youtube,
     ListVideo,
     Upload,
-    Zap // Restored missing Zap import
+    Zap,
+    Activity // Added Activity icon
 } from "lucide-react";
 import YouTubeBrowser from "../components/YouTubeBrowser";
 import { CookiesModal } from "../components/CookiesModal";
 import { VideoQueue } from "../components/VideoQueue";
 import "../App.css";
 import "../App.css";
+
+import { DraggableSyncStatus } from "../components/VideoPlayer/DraggableSyncStatus";
 
 
 // Define a type guard for messages that might contain URLs
@@ -94,6 +97,7 @@ export const Session: React.FC = () => {
     const [showMobileControls, setShowMobileControls] = useState(false);
     const [showYouTubeBrowser, setShowYouTubeBrowser] = useState(false);
     const [showCookiesModal, setShowCookiesModal] = useState(false);
+    const [showSyncControl, setShowSyncControl] = useState(true); // Default to open
     const [activeTab, setActiveTab] = useState<"chat" | "library" | "users" | "queue">(
         "chat"
     );
@@ -322,6 +326,7 @@ export const Session: React.FC = () => {
                     <div className="hidden lg:flex items-center gap-2">
                         {isAdmin && (
                             <>
+                                <button onClick={() => setShowSyncControl(!showSyncControl)} className={`hover:bg-white/10 p-2 rounded-lg transition-colors ${showSyncControl ? "text-green-400" : "text-zinc-400 hover:text-green-400"}`} title="Toggle Sync Monitor"><Activity size={18} /></button>
                                 <button onClick={handleSync} className="hover:bg-white/10 p-2 rounded-lg text-zinc-400 hover:text-amber-500 transition-colors" title="Force Sync"><Zap size={18} /></button>
                                 <button onClick={toggleUserControls} className={`hover:bg-white/10 p-2 rounded-lg transition-colors ${userControlsAllowed ? "text-green-400" : "text-red-400"}`} title="Lock Controls">
                                     {userControlsAllowed ? <Unlock size={18} /> : <Lock size={18} />}
@@ -491,6 +496,9 @@ export const Session: React.FC = () => {
                 isOpen={showCookiesModal}
                 onClose={() => setShowCookiesModal(false)}
             />
+
+            {/* Draggable Sync Control (Global Overlay) */}
+            <DraggableSyncStatus visible={showSyncControl} onClose={() => setShowSyncControl(false)} />
         </div >
     );
 };

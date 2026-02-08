@@ -11,7 +11,7 @@ export const getSyncMessage = (
     syncState: SyncState,
     isBuffering: boolean,
     participantCount?: { ready: number; total: number }
-): SyncMessageConfig => {
+): SyncMessageConfig | null => {
     // INITIAL_SYNC + Buffering = Local buffering
     if (syncState === SyncState.INITIAL_SYNC && isBuffering) {
         return {
@@ -38,19 +38,10 @@ export const getSyncMessage = (
 
     // SYNCED = Ready state (shows briefly before auto-dismiss)
     if (syncState === SyncState.SYNCED) {
-        return {
-            title: 'Ready!',
-            description: 'Everyone is ready. Starting playback...',
-            icon: 'checkmark',
-            variant: 'success'
-        };
+        return null;
     }
 
     // IDLE = Default (shouldn't show toast)
-    return {
-        title: 'Idle',
-        description: '',
-        icon: 'pulse',
-        variant: 'ready'
-    };
+    // IDLE = Default (shouldn't show toast)
+    return null;
 };

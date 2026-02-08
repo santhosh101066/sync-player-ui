@@ -120,6 +120,8 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
         onDismissToast={videoSync.dismissSyncToast}
       />
 
+
+
       {/* Player Controls */}
       <PlayerControls
         paused={videoSync.paused}

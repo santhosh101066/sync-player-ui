@@ -4,6 +4,7 @@ export interface ConnectedUser {
     isAdmin: boolean;
     isMuted: boolean;
     picture?: string;
+    paused: boolean; // Individual user's playing state
 }
 
 export interface QueueVideo {
@@ -59,5 +60,5 @@ export type ServerMessage =
     | { type: 'session-replaced'; text: string }  // NEW: notify user of session replacement
     | { type: 'queue-state'; queue: QueueItem[]; currentIndex: number }
     | { type: 'ping' } | { type: 'pong' }
-    | { type: 'buffer-progress'; ready: number; total: number; allReady: boolean }
+    | { type: 'buffer-progress'; ready: number; total: number; allReady: boolean; unreadyUsers?: string[] }
     | { type: 'auth-success'; nick: string; picture?: string; email?: string; userId?: string };

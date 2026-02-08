@@ -501,6 +501,15 @@ export const useVideoSync = (): VideoSyncState => {
         // --- FORCE SYNC LOGIC ---
         if (currentVideoState.isForce) {
             console.log(`[ForceSync] Executing hard sync to ${targetTime} (Paused: ${serverPaused})`);
+
+            // CRITICAL FIX: Explicitly transition to SYNCED state
+            if (syncStateRef.current !== SyncState.SYNCED) {
+                console.log(`[ForceSync] Transitioning from ${syncStateRef.current} to SYNCED`);
+                setSyncState(SyncState.SYNCED);
+                setIsSyncing(false);
+                setShowAdminToast(false);
+            }
+
             isRemoteUpdate.current = true;
 
             if (url && url !== currentSrcRef.current) {
