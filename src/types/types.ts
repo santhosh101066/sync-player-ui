@@ -41,6 +41,7 @@ export type ClientMessage =
     | { type: 'queue-reorder'; fromIndex: number; toIndex: number }
     | { type: 'queue-get' }
     | { type: 'video-ended' }
+    | { type: 'buffer-status'; buffered: boolean }
     | { type: 'ping' } | { type: 'pong' };
 
 export type ServerMessage =
@@ -58,4 +59,5 @@ export type ServerMessage =
     | { type: 'session-replaced'; text: string }  // NEW: notify user of session replacement
     | { type: 'queue-state'; queue: QueueItem[]; currentIndex: number }
     | { type: 'ping' } | { type: 'pong' }
+    | { type: 'buffer-progress'; ready: number; total: number; allReady: boolean }
     | { type: 'auth-success'; nick: string; picture?: string; email?: string; userId?: string };

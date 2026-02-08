@@ -73,6 +73,14 @@ export const PlayerControls = React.memo<PlayerControlsProps>(({
         setShowMobileVolume((prev) => !prev);
     }, []);
 
+    // Auto-close menus when controls hide
+    useEffect(() => {
+        if (!controlsVisible) {
+            setShowSettingsMenu(false);
+            setShowMobileVolume(false);
+        }
+    }, [controlsVisible]);
+
     return (
         <div
             className={`absolute inset-0 z-30 flex flex-col justify-end pointer-events-none transition-opacity duration-300 ${controlsVisible || paused ? "opacity-100" : "opacity-0"

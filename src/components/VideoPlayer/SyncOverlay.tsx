@@ -1,6 +1,7 @@
 import React from "react";
 import type { SyncOverlayProps } from "../../types/videoPlayer.types";
 import { getSyncMessage } from "../../utils/syncMessages";
+import { useWebSocket } from "../../context/WebSocketContext";
 
 const SyncIcon: React.FC<{ type: 'spinner' | 'pulse' | 'checkmark' | 'users' }> = ({ type }) => {
     switch (type) {
@@ -35,17 +36,43 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
     onDismissToast,
     participantCount,
 }) => {
-    const messageConfig = getSyncMessage(syncState, isBuffering, participantCount);
-    const isSuccess = messageConfig.variant === 'success';
+    // --- Buffer Progress (Admin Only) ---
+    const { bufferProgress } = useWebSocket();
+
+    // Determine which message to show
+    let messageConfig = getSyncMessage(syncState, isBuffering, participantCount);
+    let isSuccess = messageConfig.variant === 'success';
+
+    // Override for Buffer Progress if active
+    if (isAdmin && bufferProgress && bufferProgress.total > 0 && !bufferProgress.allReady) {
+        messageConfig = {
+            title: "Loading Video...",
+            description: `${bufferProgress.ready}/${bufferProgress.total} Users Ready`,
+            icon: 'spinner',
+            variant: 'waiting'
+        };
+        isSuccess = false;
+    } else if (isAdmin && bufferProgress?.allReady) {
+        messageConfig = {
+            title: "Ready to Play!",
+            description: "All users loaded successfully",
+            icon: 'checkmark',
+            variant: 'success'
+        };
+        isSuccess = true;
+    }
 
     return (
         <>
             {/* Admin Toast - Bottom Right (NON-BLOCKING) */}
-            {isAdmin && showAdminToast && (
+            {isAdmin && (showAdminToast || bufferProgress) && (
                 <div className="absolute bottom-24 right-5 z-25">
                     <div
                         className={`
                             ${isSuccess ? 'bg-green-500/90 border-green-400/50' : 'bg-blue-500/90 border-blue-400/50'}
+                            // Yellow override for buffering
+                            ${bufferProgress && !bufferProgress.allReady ? '!bg-yellow-600/90 !border-yellow-500/50' : ''}
+
                             border backdrop-blur-xl rounded-lg px-4 py-3 text-white shadow-2xl 
                             animate-in slide-in-from-right-5 fade-in duration-300 min-w-[280px]
                             transition-colors duration-500
@@ -61,7 +88,7 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
                                     </span>
                                 </div>
                             </div>
-                            {onDismissToast && !isSuccess && (
+                            {onDismissToast && !isSuccess && !bufferProgress && (
                                 <button
                                     onClick={onDismissToast}
                                     className="text-blue-100 hover:text-white transition-colors p-1 -mt-1 -mr-1"
@@ -76,8 +103,11 @@ export const SyncOverlay: React.FC<SyncOverlayProps> = ({
 
                         {/* Progress bar - only show when waiting */}
                         {messageConfig.variant === 'waiting' && (
-                            <div className="mt-2 w-full bg-blue-700/30 rounded-full h-1 overflow-hidden">
-                                <div className="h-full bg-blue-300 rounded-full animate-pulse w-2/3" />
+                            <div className="mt-2 w-full bg-black/20 rounded-full h-1 overflow-hidden">
+                                <div
+                                    className="h-full bg-white/50 rounded-full transition-all duration-500"
+                                    style={{ width: bufferProgress ? `${(bufferProgress.ready / bufferProgress.total) * 100}%` : '66%' }}
+                                />
                             </div>
                         )}
                     </div>

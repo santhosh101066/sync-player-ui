@@ -272,11 +272,41 @@ export const useVideoSync = (): VideoSyncState => {
             console.log('[Player] Can play through');
         });
 
+        // --- Buffer Sync Monitoring ---
+        const bufferCheckInterval = setInterval(() => {
+            const player = playerRef.current;
+            if (!player || !player.paused()) return; // Only check when paused
+
+            // Only relevant at the start of the video (initial sync)
+            const currentTime = player.currentTime() || 0;
+            if (currentTime > 0.1) return;
+
+            // User Request: Robust check for ALL video types (YouTube, MP4, HLS)
+            // readyState 3 = HAVE_FUTURE_DATA
+            // readyState 4 = HAVE_ENOUGH_DATA
+            // bufferedEnd > 5 = Fallback if readyState is flaky but we have data
+
+            const rState = player.readyState();
+            const bEnd = player.bufferedEnd() || 0;
+
+            const isReadyToPlay = rState >= 3 || bEnd > 5;
+
+            // Use a ref to track sent state to avoid spamming
+            if ((player as any)._lastSentBufferState !== isReadyToPlay) {
+                (player as any)._lastSentBufferState = isReadyToPlay;
+                if (permissionsRef.current.isConnected) {
+                    console.log(`[BufferSync] Sending buffer status: ${isReadyToPlay} (readyState: ${rState}, buffered: ${bEnd.toFixed(1)}s)`);
+                    send({ type: 'buffer-status', buffered: isReadyToPlay });
+                }
+            }
+        }, 1000);
+
         return () => {
             if (player) {
                 player.dispose();
             }
             playerRef.current = null;
+            clearInterval(bufferCheckInterval);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -394,34 +424,13 @@ export const useVideoSync = (): VideoSyncState => {
             player.one("loadedmetadata", () => {
                 if (startTime > 0) player.currentTime(startTime);
 
-                // Transition to SYNCED after a short delay (simulating "all users ready")
-                if (!isNewIntro) {
-                    syncTimeoutRef.current = window.setTimeout(() => {
-                        console.log('[Sync] All participants ready, transitioning to SYNCED state');
-                        setSyncState(SyncState.SYNCED);
-                        setIsSyncing(false);
-
-                        // Show success message for 2 seconds before auto-dismiss
-                        setTimeout(() => {
-                            setShowAdminToast(false);
-                        }, 2000);
-
-                        if (autoPlay) {
-                            // Ensure this play event is treated as a remote update to update UI state
-                            isRemoteUpdate.current = true;
-                            const p = player.play();
-                            if (p) p.catch((e) => console.warn("Autoplay blocked", e));
-
-                            // Reset flag shortly after play initiates
-                            setTimeout(() => {
-                                isRemoteUpdate.current = false;
-                            }, 500);
-                        }
-                    }, 500); // 500ms delay for faster auto-play on manual load
-                } else if (autoPlay) {
-                    const p = player.play();
-                    if (p) p.catch((e) => console.warn("Autoplay blocked", e));
+                // Wait for Server to trigger Auto-Play via forceSync
+                // We do NOT transition to SYNCED here anymore.
+                // The server will send a 'forceSync' command when all users are buffered.
+                if (autoPlay) {
+                    console.log('[LoadVideo] Auto-play requested locally, but waiting for server sync.');
                 }
+
             });
         }
 

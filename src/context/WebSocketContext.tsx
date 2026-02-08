@@ -48,6 +48,7 @@ interface WebSocketContextType {
   addLocalMessage: (text: string, image?: string, picture?: string) => void;
   currentVideoState: VideoState | null;
   userPicture?: string;
+  bufferProgress: { ready: number; total: number; allReady: boolean } | null;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(
@@ -78,6 +79,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   const [proxyEnabled, setProxyEnabled] = useState(true);
   const [chatMessages, setChatMessages] = useState<UIChatMessage[]>([]);
   const [currentVideoState, setCurrentVideoState] = useState<VideoState | null>(null);
+  const [bufferProgress, setBufferProgress] = useState<{ ready: number; total: number; allReady: boolean } | null>(null);
 
   // Refs for Audio
   const audioListenersRef = useRef<Set<(data: ArrayBuffer) => void>>(new Set());
@@ -226,6 +228,14 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
             paused: true,
             timestamp: Date.now()
           });
+          setBufferProgress(null); // Reset on new load
+        }
+        if (msg.type === 'buffer-progress') {
+          setBufferProgress({
+            ready: msg.ready,
+            total: msg.total,
+            allReady: msg.allReady
+          });
         }
 
         setLastMessage(msg);
@@ -294,7 +304,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
         chatMessages,
         addLocalMessage,
         currentVideoState,
-        userPicture
+        userPicture,
+        bufferProgress
       }}
     >
       {children}
