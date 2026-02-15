@@ -31,6 +31,7 @@ export interface VideoState {
 interface WebSocketContextType {
   socket: Socket | null;
   isConnected: boolean;
+  latency: number; // in ms
   connect: (tokenOrEmail: string, authType?: 'google' | 'dev') => void;
   send: (data: ClientMessage) => void;
   sendAudio: (data: ArrayBuffer) => void;
@@ -61,6 +62,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
   // --- State & Refs ---
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [latency, setLatency] = useState<number>(0);
 
   // User State
   const [nickname, setNickname] = useState("Guest");
@@ -243,6 +245,10 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
             unreadyUsers: msg.unreadyUsers
           });
         }
+        if (msg.type === 'pong') {
+          const rtt = Date.now() - msg.startTime;
+          setLatency(Math.ceil(rtt / 2)); // One-way latency approx
+        }
 
         setLastMessage(msg);
       } catch (e) {
@@ -255,6 +261,18 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     setSocket(newSocket);
+
+    // Ping Interval
+    const pingInterval = setInterval(() => {
+      if (newSocket.connected) {
+        newSocket.emit("message", { type: 'ping', startTime: Date.now() });
+      }
+    }, 2000); // Check every 2s
+
+    return () => {
+      clearInterval(pingInterval);
+      newSocket.disconnect();
+    };
   }, [socket]);
 
   // --- 3. Sending Functions ---
@@ -305,6 +323,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         socket,
         isConnected,
+        latency,
         connect,
         send,
         sendAudio,

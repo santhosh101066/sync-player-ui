@@ -53,6 +53,7 @@ export const Session: React.FC = () => {
     const navigate = useNavigate();
     // 1. Data Layer
     const {
+        socket, // Check if socket is initialized
         send,
         isAdmin,
         userControlsAllowed,
@@ -75,11 +76,15 @@ export const Session: React.FC = () => {
     } = useAudio();
 
     // 3. UI State
+    // Logic: If socket is null (refresh/direct access), redirect to login.
+    // If socket exists but !isConnected (network drop), stay and show reconnecting toast.
     useEffect(() => {
-        if (!isConnected) {
+        if (!socket) {
             navigate('/');
         }
+    }, [socket, navigate]);
 
+    useEffect(() => {
         const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             e.preventDefault();
             e.returnValue = ''; // Chrome requires returnValue to be set
@@ -90,7 +95,7 @@ export const Session: React.FC = () => {
         return () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
         };
-    }, [isConnected, navigate]);
+    }, []);
 
     // 4. Form Inputs
     const [showAdminDashboard, setShowAdminDashboard] = useState(false);
@@ -167,6 +172,17 @@ export const Session: React.FC = () => {
 
     return (
         <div className="app-layout">
+
+            {/* Reconnecting Overlay - NON-INTRUSIVE */}
+            {!isConnected && socket && (
+                <div className="fixed bottom-4 right-4 z-[100] bg-zinc-900/90 border border-white/10 backdrop-blur-md px-4 py-3 rounded-lg shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4">
+                    <div className="w-5 h-5 border-2 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin shrink-0"></div>
+                    <div className="flex flex-col">
+                        <span className="text-sm font-bold text-white leading-none">Reconnecting...</span>
+                        <span className="text-[10px] text-zinc-400 mt-0.5">Functionality may be limited</span>
+                    </div>
+                </div>
+            )}
 
             {showAdminDashboard && (
                 <AdminDashboard onClose={() => setShowAdminDashboard(false)} />

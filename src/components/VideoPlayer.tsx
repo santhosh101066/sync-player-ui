@@ -106,6 +106,7 @@ const VideoPlayerComponent: React.FC<VideoPlayerProps> = ({
         activeSpeakers={activeSpeakers}
         controlsVisible={controlsVisible}
         paused={videoSync.paused}
+        latency={useWebSocket().latency}
       />
 
       {/* Chat Overlay */}

@@ -43,7 +43,7 @@ export type ClientMessage =
     | { type: 'queue-get' }
     | { type: 'video-ended' }
     | { type: 'buffer-status'; buffered: boolean }
-    | { type: 'ping' } | { type: 'pong' };
+    | { type: 'ping'; startTime: number } | { type: 'pong'; startTime: number };
 
 export type ServerMessage =
     | { type: 'welcome'; userId: string }  // Changed from number to string
@@ -59,6 +59,6 @@ export type ServerMessage =
     | { type: 'kick' }
     | { type: 'session-replaced'; text: string }  // NEW: notify user of session replacement
     | { type: 'queue-state'; queue: QueueItem[]; currentIndex: number }
-    | { type: 'ping' } | { type: 'pong' }
+    | { type: 'ping'; startTime: number } | { type: 'pong'; startTime: number }
     | { type: 'buffer-progress'; ready: number; total: number; allReady: boolean; unreadyUsers?: string[] }
     | { type: 'auth-success'; nick: string; picture?: string; email?: string; userId?: string };

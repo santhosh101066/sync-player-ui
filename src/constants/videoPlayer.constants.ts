@@ -30,4 +30,4 @@ export const AMBIENT_CANVAS_SIZE = 50;
 export const MAX_PACKET_AGE = 2000; // ms - drop packets older than this
 
 // Local interaction cooldown
-export const LOCAL_INTERACTION_COOLDOWN = 1000; // ms
+export const LOCAL_INTERACTION_COOLDOWN = 2000; // ms

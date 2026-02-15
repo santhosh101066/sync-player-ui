@@ -8,6 +8,7 @@ export const StatusIndicators: React.FC<StatusIndicatorsProps> = ({
     activeSpeakers,
     controlsVisible,
     paused,
+    latency,
 }) => {
     return (
         <>
@@ -24,6 +25,11 @@ export const StatusIndicators: React.FC<StatusIndicatorsProps> = ({
                 >
                     <div className="w-2 h-2 rounded-full bg-current" />
                     {isConnected ? "Live" : "Offline"}
+                    {isConnected && latency > 0 && (
+                        <span className="text-xs opacity-75 ml-1 font-mono">
+                            {latency}ms
+                        </span>
+                    )}
                 </div>
 
                 {/* Lock Indicator - Top Left */}

@@ -198,4 +198,5 @@ export interface StatusIndicatorsProps {
     activeSpeakers: string[];
     controlsVisible: boolean;
     paused: boolean;
+    latency: number;
 }
